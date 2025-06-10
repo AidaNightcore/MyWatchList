@@ -1,38 +1,27 @@
 from flask import Blueprint, request, jsonify
-from .models import Watchlist, WatchElement
-from api.auth.models import User
-from api.common.database import db
-from .services import update_watch_status
+from flask_jwt_extended import jwt_required
+from http import HTTPStatus
+from .models import Worker, Job, Crew
+from api.middleware import jwt_required_middleware
 
-watchlist_bp = Blueprint('watchlist', __name__, url_prefix='/watchlists')
+people_bp = Blueprint('people', __name__, url_prefix='/api/people')
 
+@people_bp.route('/workers', methods=['GET'])
+@jwt_required_middleware()
+def get_workers():
+    workers = Worker.query.all()
+    return jsonify([{
+        'id': worker.id,
+        'name': worker.name,
+        'jobs': [job.title for job in worker.jobs]
+    } for worker in workers]), HTTPStatus.OK
 
-@watchlist_bp.route('/<int:user_id>/entries', methods=['POST'])
-def add_to_watchlist(user_id):
-    data = request.json
-    user = User.query.get_or_404(user_id)
-
-    # Get or create watchlist
-    watchlist = Watchlist.query.filter_by(userID=user_id).first()
-    if not watchlist:
-        watchlist = Watchlist(userID=user_id)
-        db.session.add(watchlist)
-
-    new_entry = WatchElement(
-        titleID=data['title_id'],
-        watchlistID=watchlist.id,
-        status=data['status']
-    )
-    db.session.add(new_entry)
-    db.session.commit()
-
-    return jsonify(new_entry.serialize()), 201
-
-
-@watchlist_bp.route('/entries/<int:entry_id>', methods=['PUT'])
-def update_entry(entry_id):
-    data = request.json
-    entry = WatchElement.query.get_or_404(entry_id)
-    update_watch_status(entry, data)  # Business logic in services
-    db.session.commit()
-    return jsonify(entry.serialize())
+@people_bp.route('/crew/<int:title_id>', methods=['GET'])
+@jwt_required_middleware()
+def get_crew_for_title(title_id):
+    crew_members = Crew.query.filter_by(titleID=title_id).all()
+    return jsonify([{
+        'id': crew.id,
+        'worker': crew.job.worker.name,
+        'job': crew.job.title
+    } for crew in crew_members]), HTTPStatus.OK
