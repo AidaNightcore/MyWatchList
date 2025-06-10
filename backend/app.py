@@ -1,10 +1,12 @@
 from flask import Flask, jsonify
 from flask_jwt_extended import JWTManager
 from flask_cors import CORS
+from flask_migrate import Migrate
 from api.common.database import db, init_db
+from api.media.routes import media_bp
+from api.user.models import User
 from config import Config
 import logging
-
 
 def create_app():
     # Initialize Flask app
@@ -16,6 +18,8 @@ def create_app():
     jwt = JWTManager(app)
     CORS(app)  # Enable CORS
 
+    # migrate = Migrate(app, db)
+
     # Configure logging
     logging.basicConfig(
         level=logging.INFO,
@@ -24,7 +28,7 @@ def create_app():
     )
 
     # Import models AFTER initializing db
-    from api.auth.models import User, RefreshToken
+    from api.auth.models import RefreshToken
     from api.media.models import (
         Book, Movie, Show, Season, Episode,
         Title, Genre, Franchise, Publisher, Type
@@ -35,6 +39,7 @@ def create_app():
     from api.watchlist.models import Watchlist, WatchlistItem
 
     # Register blueprints
+    from api.auth.models import enhance_user_model
     from api.auth.routes import auth_bp
     from api.media.routes import media_bp
     from api.people.routes import people_bp
@@ -42,6 +47,7 @@ def create_app():
     from api.user.routes import user_bp
     from api.watchlist.routes import watchlist_bp
 
+    enhance_user_model()
     app.register_blueprint(auth_bp)
     app.register_blueprint(media_bp)
     app.register_blueprint(people_bp)
@@ -58,11 +64,11 @@ def create_app():
 
     @jwt.user_identity_loader
     def user_identity_lookup(user):
-        return user.id
+        return str(user.id)  # always return string
 
     @jwt.user_lookup_loader
     def user_lookup_callback(_jwt_header, jwt_data):
-        identity = jwt_data["sub"]
+        identity = int(jwt_data["sub"])
         return User.query.get(identity)
 
     # Error handlers

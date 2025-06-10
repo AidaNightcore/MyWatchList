@@ -1,36 +1,64 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import React from "react";
+import { Routes, Route, Navigate, Outlet } from "react-router-dom";
 import AppLayout from "../components/layout/AppLayout";
+import AuthLayout from "../components/layout/AuthLayout";
+import { useAuth } from "../contexts/AuthContext";
+
+// Pages
 import HomePage from "../pages/HomePage/HomePage";
+import LoginPage from "../pages/Auth/LoginPage";
+import RegisterPage from "../pages/Auth/RegisterPage";
 import MediaListPage from "../pages/Media/MediaListPage";
 import MediaDetailPage from "../pages/Media/MediaDetailPage";
-import LoginPage from "../pages/Auth/LoginPage";
 import WatchlistPage from "../pages/User/WatchlistPage";
 import ProfilePage from "../pages/User/ProfilePage";
+import SearchPage from "../pages/SearchPage/SearchPage";
+import ErrorPage from "../pages/ErrorPage";
 
-function AppRouter() {
+// Protected route component
+const ProtectedRoute = () => {
+  const { isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) {
+    return <div>Loading...</div>;
+  }
+
+  return isAuthenticated ? <Outlet /> : <Navigate to="/login" replace />;
+};
+
+// Main router component
+const AppRouter = () => {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<AppLayout />}>
-          <Route index element={<HomePage />} />
+    <Routes>
+      {/* Auth layout routes */}
+      <Route element={<AuthLayout />}>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
+      </Route>
 
-          {/* Media routes */}
-          <Route path="media" element={<MediaListPage />} />
-          <Route path="media/:id" element={<MediaDetailPage />} />
+      {/* Main app layout */}
+      <Route element={<AppLayout />}>
+        {/* Public routes */}
+        <Route index element={<HomePage />} />
+        <Route path="/search" element={<SearchPage />} />
 
-          {/* User routes */}
-          <Route path="user/:username" element={<ProfilePage />} />
-          <Route path="watchlist" element={<WatchlistPage />} />
-
-          {/* Auth routes */}
-          <Route path="login" element={<LoginPage />} />
-
-          {/* Error route */}
-          <Route path="*" element={<div>Page Not Found</div>} />
+        {/* Media routes */}
+        <Route path="/media">
+          <Route index element={<MediaListPage />} />
+          <Route path=":id" element={<MediaDetailPage />} />
         </Route>
-      </Routes>
-    </BrowserRouter>
+
+        {/* Protected routes */}
+        <Route element={<ProtectedRoute />}>
+          <Route path="/watchlist" element={<WatchlistPage />} />
+          <Route path="/profile/:username" element={<ProfilePage />} />
+        </Route>
+
+        {/* 404 route */}
+        <Route path="*" element={<ErrorPage />} />
+      </Route>
+    </Routes>
   );
-}
+};
 
 export default AppRouter;
