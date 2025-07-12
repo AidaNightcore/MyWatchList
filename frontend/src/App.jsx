@@ -5,7 +5,7 @@ import { BrowserRouter } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
 import AppRouter from "./routes/AppRouter";
 import theme from "./assets/styles/theme";
-
+import { PrimeReactProvider } from "primereact/api";
 function App() {
   return (
     <BrowserRouter>

@@ -21,6 +21,8 @@ class Config:
 
     # Rate Limiting
     REDIS_URL = os.getenv('REDIS_URL')
+    CACHE_TYPE= "RedisCache"
+    CACHE_DEFAULT_TIMEOUT = 300
 
     # Security
     SESSION_COOKIE_SECURE = True

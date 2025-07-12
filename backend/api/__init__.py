@@ -3,6 +3,9 @@ from .common.database import db
 from .common.errors import register_error_handlers
 from flask_jwt_extended import JWTManager
 from flask_mail import Mail
+
+from .media.routes import admin_bp
+
 mail = Mail()
 
 def create_app(config_class):
@@ -33,6 +36,6 @@ def create_app(config_class):
     app.register_blueprint(social_bp)
     app.register_blueprint(user_bp)
     app.register_blueprint(watchlist_bp)
-
+    app.register_blueprint(admin_bp)
 
     return app

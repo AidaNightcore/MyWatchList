@@ -5,6 +5,7 @@ from .models import User, UserRelationship
 from api.middleware import jwt_required_middleware
 from ..common.database import db
 from api.middleware.permissions import admin_required, moderator_required
+
 user_bp = Blueprint('user', __name__, url_prefix='/api/users')
 
 from api.common.email_service import (

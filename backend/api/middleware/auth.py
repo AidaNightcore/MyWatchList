@@ -28,7 +28,9 @@ PUBLIC_ENDPOINTS = {
     'media.get_franchises',
     'media.get_franchise',
     'media.get_genre',
-    'media.get_genres'
+    'media.get_genres',
+    'media.get_all_titles'
+
 }
 
 def jwt_required_middleware():

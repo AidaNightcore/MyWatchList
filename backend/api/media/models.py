@@ -19,7 +19,7 @@ class Franchise(db.Model):
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     title = db.Column(db.String(255))
     publisher = db.Column(db.String(255))
-    synopsis = db.Column(db.String(255))
+    synopsis = db.Column(db.Text)
 
     # Relationships
     books = relationship('Book', back_populates='franchise')
@@ -71,6 +71,15 @@ class Title(db.Model):
     def genre_names(self):
         return [genre.name for genre in self.genres]
 
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'title': self.title,
+            'elementType': self.elementType,
+            'media_type': self.media_type.elementTypeName if self.media_type else None,
+            'genres': self.genre_names,
+        }
+
 
 class Book(db.Model):
     __tablename__ = 'Book'
@@ -80,11 +89,12 @@ class Book(db.Model):
     franchiseID = db.Column(db.Integer, db.ForeignKey('Franchise.id'), nullable=True)
     publisherID = db.Column(db.Integer, db.ForeignKey('Publisher.id'))
     ageRating = db.Column(db.String(255))
-    synopsis = db.Column(db.String(255))
+    synopsis = db.Column(db.Text)
     publishDate = db.Column(db.Date)
     isbnID = db.Column(db.String(20))
     goodreadsID = db.Column(db.String(20))
     pages = db.Column(db.Integer)
+    image_url = db.Column(db.String(500))
 
     # Relationships
     media_type = relationship('Type', back_populates='books')
@@ -109,6 +119,27 @@ class Book(db.Model):
             'worker': member.job.worker.name
         } for member in crew_set]
 
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'title': self.title,
+            'type': 'Book',
+            'typeID': self.typeID,
+            'franchise': self.franchise.title if self.franchise else None,
+            'franchiseID': self.franchiseID,
+            'publisher': self.publisher.name if self.publisher else None,
+            'publisherID': self.publisherID,
+            'ageRating': self.ageRating,
+            'synopsis': self.synopsis,
+            'publishDate': self.publishDate.isoformat() if self.publishDate else None,
+            'isbnID': self.isbnID,
+            'goodreadsID': self.goodreadsID,
+            'pages': self.pages,
+            'image_url': self.image_url,
+            'genres': [g.name for g in self.genres],
+            'crew': self.crew,
+        }
+
 
 class Movie(db.Model):
     __tablename__ = 'Movie'
@@ -118,10 +149,10 @@ class Movie(db.Model):
     franchiseID = db.Column(db.Integer, db.ForeignKey('Franchise.id'))
     publisherID = db.Column(db.Integer, db.ForeignKey('Publisher.id'))
     ageRating = db.Column(db.String(255))
-    synopsis = db.Column(db.String(255))
+    synopsis = db.Column(db.Text)
     publishDate = db.Column(db.Date)
-    imdbID = db.Column(db.Integer)
-
+    imdbID = db.Column(db.String(16))
+    image_url = db.Column(db.String(500))
     # Relationships
     media_type = relationship('Type', back_populates='movies')
     franchise = relationship('Franchise', back_populates='movies')
@@ -145,6 +176,25 @@ class Movie(db.Model):
             'worker': member.job.worker.name
         } for member in crew_set]
 
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'title': self.title,
+            'type': 'Movie',
+            'typeID': self.typeID,
+            'franchise': self.franchise.title if self.franchise else None,
+            'franchiseID': self.franchiseID,
+            'publisher': self.publisher.name if self.publisher else None,
+            'publisherID': self.publisherID,
+            'ageRating': self.ageRating,
+            'synopsis': self.synopsis,
+            'publishDate': self.publishDate.isoformat() if self.publishDate else None,
+            'imdbID': self.imdbID,
+            'image_url': self.image_url,
+            'genres': [g.name for g in self.genres],
+            'crew': self.crew,
+        }
+
 
 class Show(db.Model):
     __tablename__ = 'Show'
@@ -153,8 +203,9 @@ class Show(db.Model):
     franchiseID = db.Column(db.Integer, db.ForeignKey('Franchise.id'))
     publisherID = db.Column(db.Integer, db.ForeignKey('Publisher.id'))
     ageRating = db.Column(db.String(255))
-    synopsis = db.Column(db.String(255))
+    synopsis = db.Column(db.Text)
     imdbID = db.Column(db.Integer)
+    image_url = db.Column(db.String(500))
 
     # Relationships
     franchise = relationship('Franchise', back_populates='shows')
@@ -177,15 +228,35 @@ class Show(db.Model):
                 crew_set.update(episode.crew)
         return list(crew_set)
 
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'title': self.title,
+            'type': 'Show',
+            'franchise': self.franchise.title if self.franchise else None,
+            'franchiseID': self.franchiseID,
+            'publisher': self.publisher.name if self.publisher else None,
+            'publisherID': self.publisherID,
+            'ageRating': self.ageRating,
+            'synopsis': self.synopsis,
+            'imdbID': self.imdbID,
+            'image_url': self.image_url,
+            'genres': [g.name for g in self.genres],
+            'crew': [c for c in self.crew],  # crew poate conține dicturi sau obiecte, vezi cum vrei să serialiezi
+            'seasons': [season.id for season in self.seasons],
+            # sau serializare completă cu .to_dict() dacă vrei detalii
+        }
+
 
 class Season(db.Model):
     __tablename__ = 'Season'
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     showID = db.Column(db.Integer, db.ForeignKey('Show.id'))
     seasonNumber = db.Column(db.Integer)
-    synopsis = db.Column(db.String(255))
+    synopsis = db.Column(db.Text)
     publishDate = db.Column(db.Date)
     episodeCount = db.Column(db.Integer)
+    image_url = db.Column(db.String(500))
 
     # Relationships
     show = relationship('Show', back_populates='seasons')
@@ -207,6 +278,20 @@ class Season(db.Model):
                 crew_set.update(episode.crew)
         return list(crew_set)
 
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'showID': self.showID,
+            'seasonNumber': self.seasonNumber,
+            'synopsis': self.synopsis,
+            'publishDate': self.publishDate.isoformat() if self.publishDate else None,
+            'episodeCount': self.episodeCount,
+            'image_url': self.image_url,
+            'genres': [g.name for g in self.genres],
+            'crew': [c for c in self.crew],
+            'episodes': [ep.id for ep in self.episodes],  # sau [ep.to_dict() for ep in self.episodes] pentru detalii
+        }
+
 
 class Episode(db.Model):
     __tablename__ = 'Episode'
@@ -214,9 +299,10 @@ class Episode(db.Model):
     title = db.Column(db.String(255))
     typeID = db.Column(db.Integer, db.ForeignKey('Type.id'))
     ageRating = db.Column(db.String(255))
-    synopsis = db.Column(db.String(255))
+    synopsis = db.Column(db.Text)
     publishDate = db.Column(db.Date)
     seasonID = db.Column(db.Integer, db.ForeignKey('Season.id'))
+    image_url = db.Column(db.String(500))
 
     # Relationships
     media_type = relationship('Type', back_populates='episodes')
@@ -239,6 +325,20 @@ class Episode(db.Model):
             'job': member.job.title,
             'worker': member.job.worker.name
         } for member in crew_set]
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'title': self.title,
+            'typeID': self.typeID,
+            'ageRating': self.ageRating,
+            'synopsis': self.synopsis,
+            'publishDate': self.publishDate.isoformat() if self.publishDate else None,
+            'seasonID': self.seasonID,
+            'image_url': self.image_url,
+            'genres': [g.name for g in self.genres],
+            'crew': self.crew,
+        }
 
 
 

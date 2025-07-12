@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useAuth } from "../../contexts/AuthContext";
+import { useAuthStore } from "../../store/authStore";
 import { useNavigate } from "react-router-dom";
 import {
   Container,
@@ -19,6 +20,10 @@ const LoginPage = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     await login({ email, password });
+    // Redirect dacă login-ul a reușit
+    if (useAuthStore.getState().user) {
+      navigate("/");
+    }
   };
 
   return (

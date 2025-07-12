@@ -22,7 +22,9 @@ def get_crew_for_title(title_id):
     crew_members = Crew.query.filter_by(titleID=title_id).all()
     return jsonify([{
         'id': crew.id,
+        'worker_id': crew.job.worker.id,
         'worker': crew.job.worker.name,
+        'job_id': crew.job.id,
         'job': crew.job.title
     } for crew in crew_members]), HTTPStatus.OK
 
@@ -94,3 +96,4 @@ def search_workers():
         'jobs': [job.title for job in worker.jobs]
     } for worker in workers]
     return jsonify(results), HTTPStatus.OK
+

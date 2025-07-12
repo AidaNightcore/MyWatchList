@@ -1,9 +1,10 @@
+import redis
 from flask import Flask, jsonify
 from flask_jwt_extended import JWTManager
 from flask_cors import CORS
 from flask_migrate import Migrate
 from api.common.database import db, init_db
-from api.media.routes import media_bp
+from api.media.routes import media_bp, admin_bp
 from api.user.models import User
 from config import Config
 import logging
@@ -18,7 +19,8 @@ def create_app():
     jwt = JWTManager(app)
     CORS(app)  # Enable CORS
 
-    # migrate = Migrate(app, db)
+    redis_client = redis.from_url(app.config['REDIS_URL'])
+
 
     # Configure logging
     logging.basicConfig(
@@ -54,6 +56,7 @@ def create_app():
     app.register_blueprint(social_bp)
     app.register_blueprint(user_bp)
     app.register_blueprint(watchlist_bp)
+    app.register_blueprint(admin_bp)
 
     # JWT configuration
     @jwt.token_in_blocklist_loader

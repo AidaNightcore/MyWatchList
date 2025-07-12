@@ -1,6 +1,8 @@
 from http import HTTPStatus
 from flask import Blueprint, request, jsonify
-from api.media.services import create_title_with_metadata
+from sqlalchemy import text, desc, func
+
+from api.media.services import create_title_with_metadata, get_publisher_name_for_title, get_title_score
 from api.middleware import jwt_required_middleware
 from .models import (
     Book, Movie, Show, Season, Episode,
@@ -10,45 +12,72 @@ from ..common.database import db
 from api.middleware.permissions import admin_required
 import requests
 from api.media.services import tastedive_recommend
+from ..common.utils import get_score_recursive
+from ..middleware.cache_response import cache_response
 from ..user.models import User
 from ..watchlist.models import WatchlistItem, Watchlist
 
 media_bp = Blueprint('media', __name__, url_prefix='/api/media')
+admin_bp = Blueprint('admin', __name__, url_prefix='/api/admin')
 
 @media_bp.route('/books', methods=['GET'])
 @jwt_required_middleware()
+@cache_response(timeout=120)
 def get_books():
     books = Book.query.all()
+    result = []
+    for book in books:
+        score = get_score_recursive('Book', book.id)
+        result.append({
+            'id': book.id,
+            'title': book.title,
+            'image_url': book.image_url,
+            'genres': [g.name for g in book.genres] if book.genres else [],
+            'publisher': book.publisher.name if book.publisher else None,
+            'publishDate': book.publishDate.isoformat() if book.publishDate else None,
+            'pages':book.pages,
+            'score': score
+        })
+    return jsonify(result), HTTPStatus.OK
 
-    return jsonify([{
-        'id': book.id,
-        'title': book.title,
-        'genres': [genre.name for genre in book.genres],
-        'publisher': book.publisher.name if book.publisher else None,
-        'publish_date': book.publishDate.isoformat() if book.publishDate else None
-    } for book in books]), HTTPStatus.OK
 
 @media_bp.route('/movies', methods=['GET'])
 @jwt_required_middleware()
+@cache_response(timeout=120)
 def get_movies():
     movies = Movie.query.all()
-    return jsonify([{
-        'id': movie.id,
-        'title': movie.title,
-        'genre': movie.genre.name if movie.genre else None,
-        'publish_date': movie.publishDate.isoformat() if movie.publishDate else None
-    } for movie in movies]), HTTPStatus.OK
+    result = []
+    for movie in movies:
+        score = get_score_recursive('Movie', movie.id)
+        result.append({
+            'id': movie.id,
+            'title': movie.title,
+            'image_url': movie.image_url,
+            'genres': [g.name for g in movie.genres] if movie.genres else [],
+            'publisher': movie.publisher.name if movie.publisher else None,
+            'publishDate': movie.publishDate.isoformat() if movie.publishDate else None,
+            'score': score
+        })
+    return jsonify(result), HTTPStatus.OK
+
 
 @media_bp.route('/shows', methods=['GET'])
 @jwt_required_middleware()
+@cache_response(timeout=120)
 def get_shows():
     shows = Show.query.all()
-    return jsonify([{
-        'id': show.id,
-        'title': show.title,
-        'seasons_count': len(show.seasons),
-        'genres': [g.name for g in show.genres] if show.genres else []
-    } for show in shows]), HTTPStatus.OK
+    results = []
+    for show in shows:
+        score = get_score_recursive('Show', show.id)
+        results.append({
+            'id': show.id,
+            'title': show.title,
+            'image_url': show.image_url,
+            'seasons_count': len(show.seasons),
+            'genres': [g.name for g in show.genres] if show.genres else [],
+            'score': score
+        })
+    return jsonify(results), HTTPStatus.OK
 
 @media_bp.route('/shows/<int:show_id>', methods=['GET'])
 @jwt_required_middleware()
@@ -57,25 +86,131 @@ def get_show(show_id):
     return jsonify({
         'id': show.id,
         'title': show.title,
+        'image_url': show.image_url,
         'franchise': show.franchise.title if show.franchise else None,
         'publisher': show.publisher.name if show.publisher else None,
         'seasons': [{
             'id': season.id,
             'season_number': season.seasonNumber,
-            'publish_date': season.publishDate.isoformat() if season.publishDate else None,
+            'publishDate': season.publishDate.isoformat() if season.publishDate else None,
             'episode_count': season.episodeCount
         } for season in show.seasons],
         'genres': [g.name for g in show.genres],
         'crew': show.crew
     }), HTTPStatus.OK
 
+@media_bp.route('/titles', methods=['GET'])
+@jwt_required_middleware()
+def get_all_titles():
+    genres = request.args.getlist('genre')
+    publishers = request.args.getlist('publisher')
+    franchises = request.args.getlist('franchise')
+    types = request.args.getlist('type')
+
+    books_query = Book.query
+    if genres:
+        books_query = books_query.join(Book.genres).filter(Genre.name.in_(genres))
+    if publishers:
+        books_query = books_query.join(Book.publisher).filter(Publisher.name.in_(publishers))
+    if franchises:
+        books_query = books_query.join(Book.franchise).filter(Franchise.title.in_(franchises))
+
+    movies_query = Movie.query
+    if genres:
+        movies_query = movies_query.join(Movie.genres).filter(Genre.name.in_(genres))
+    if publishers:
+        movies_query = movies_query.join(Movie.publisher).filter(Publisher.name.in_(publishers))
+    if franchises:
+        movies_query = movies_query.join(Movie.franchise).filter(Franchise.title.in_(franchises))
+
+    shows_query = Show.query
+    if genres:
+        shows_query = shows_query.join(Show.genres).filter(Genre.name.in_(genres))
+    if publishers:
+        shows_query = shows_query.join(Show.publisher).filter(Publisher.name.in_(publishers))
+    if franchises:
+        shows_query = shows_query.join(Show.franchise).filter(Franchise.title.in_(franchises))
+
+    books = books_query.all()
+    movies = movies_query.all()
+    shows = shows_query.all()
+
+    def get_genres_for_title(title_id):
+        return (
+            db.session.query(Genre)
+            .join(TitleGenre, Genre.id == TitleGenre.genreID)
+            .filter(TitleGenre.titleID == title_id)
+            .all()
+        )
+
+    def serialize_book(book):
+        genres = get_genres_for_title(book.id)
+        return {
+            "id": book.id,
+            "title": book.title,
+            "type": "Book",
+            "genres": [{"id": g.id, "name": g.name} for g in genres],
+            "publisher": {"id": book.publisher.id, "name": book.publisher.name} if book.publisher else None,
+            "franchise": {"id": book.franchise.id, "title": book.franchise.title} if book.franchise else None,
+            "publishDate": book.publishDate.isoformat() if book.publishDate else None,
+            "image_url": getattr(book, "image_url", None),
+            "score": get_score_recursive('Book', book.id)
+        }
+
+    def serialize_movie(movie):
+        genres = get_genres_for_title(movie.id)
+        return {
+            "id": movie.id,
+            "title": movie.title,
+            "type": "Movie",
+            "genres": [{"id": g.id, "name": g.name} for g in genres],
+            "publisher": {"id": movie.publisher.id, "name": movie.publisher.name} if movie.publisher else None,
+            "franchise": {"id": movie.franchise.id, "title": movie.franchise.title} if movie.franchise else None,
+            "publishDate": movie.publishDate.isoformat() if movie.publishDate else None,
+            "image_url": getattr(movie, "image_url", None),
+            "score": get_score_recursive('Movie', movie.id)
+        }
+
+    def serialize_show(show):
+        genres = get_genres_for_title(show.id)
+        episode_dates = []
+        for season in getattr(show, "seasons", []):
+            for episode in getattr(season, "episodes", []):
+                if episode.publishDate:
+                    episode_dates.append(episode.publishDate)
+        first_publish_date = min(episode_dates) if episode_dates else None
+        return {
+            "id": show.id,
+            "title": show.title,
+            "type": "Show",
+            "genres": [{"id": g.id, "name": g.name} for g in genres],
+            "publisher": {"id": show.publisher.id, "name": show.publisher.name} if show.publisher else None,
+            "franchise": {"id": show.franchise.id, "title": show.franchise.title} if show.franchise else None,
+            "publishDate": first_publish_date.isoformat() if first_publish_date else None,
+            "image_url": getattr(show, "image_url", None),
+            "score": get_score_recursive('Show', show.id)
+        }
+
+    all_titles = [*map(serialize_book, books), *map(serialize_movie, movies), *map(serialize_show, shows)]
+    if types:
+        all_titles = [item for item in all_titles if item['type'] in types]
+
+    all_titles_sorted = sorted(
+        all_titles,
+        key=lambda t: t["publishDate"] if t["publishDate"] else str(1000000000 - t["id"]),
+        reverse=True
+    )
+    return jsonify(all_titles_sorted), HTTPStatus.OK
+
 
 @media_bp.route('/shows/<int:show_id>/seasons', methods=['GET'])
+@cache_response(timeout=120)
 @jwt_required_middleware()
 def get_seasons(show_id):
     show = Show.query.get_or_404(show_id)
     return jsonify([{
         'id': season.id,
+        'image_url': season.image_url,
         'season_number': season.seasonNumber,
         'episode_count': season.episodeCount
     } for season in show.seasons]), HTTPStatus.OK
@@ -86,6 +221,7 @@ def get_season(season_id):
     season = Season.query.get_or_404(season_id)
     return jsonify({
         'id': season.id,
+        'image_url': season.image_url,
         'season_number': season.seasonNumber,
         'publish_date': season.publishDate.isoformat() if season.publishDate else None,
         'episode_count': season.episodeCount,
@@ -104,6 +240,7 @@ def get_episodes(season_id):
     return jsonify([{
         'id': ep.id,
         'title': ep.title,
+        'image_url': ep.image_url,
         'publish_date': ep.publishDate.isoformat() if ep.publishDate else None,
         'synopsis': ep.synopsis,
         'genres': [g.name for g in ep.genres]
@@ -116,10 +253,12 @@ def get_episode(episode_id):
     return jsonify({
         'id': episode.id,
         'title': episode.title,
+        'image_url': episode.image_url,
         'publish_date': episode.publishDate.isoformat() if episode.publishDate else None,
         'synopsis': episode.synopsis,
         'season': {
             'id': episode.season.id,
+            'image_url': episode.season.image_url,
             'season_number': episode.season.seasonNumber
         },
         'genres': [g.name for g in episode.genres],
@@ -134,6 +273,7 @@ def get_book(book_id):
     return jsonify({
         'id': book.id,
         'title': book.title,
+        'image_url': book.image_url,
         'genres': [g.name for g in book.genres],
         'publisher': book.publisher.name if book.publisher else None,
         'franchise': book.franchise.title if book.franchise else None,
@@ -148,6 +288,7 @@ def get_movie(movie_id):
     return jsonify({
         'id': movie.id,
         'title': movie.title,
+        'image_url': movie.image_url,
         'genres': [g.name for g in movie.genres],
         'publisher': movie.publisher.name if movie.publisher else None,
         'franchise': movie.franchise.title if movie.franchise else None,
@@ -170,25 +311,20 @@ def search_media():
 
     return jsonify(results), HTTPStatus.OK
 
-@media_bp.route('/book', methods=['POST'])
+@admin_bp.route('/book', methods=['POST'])
 @jwt_required_middleware()
 @admin_required
 def create_book():
     data = request.get_json()
-
-    # Resolve Publisher
-    if 'publisher_id' not in data:
-        if 'publisher_name' in data:
-            publisher = Publisher.query.filter_by(name=data['publisher_name']).first()
-            if not publisher:
-                publisher = Publisher(name=data['publisher_name'])
-                db.session.add(publisher)
-                db.session.flush()
-            publisher_id = publisher.id
-        else:
-            return jsonify({"error": "publisher_id or publisher_name required"}), HTTPStatus.BAD_REQUEST
-    else:
-        publisher_id = data['publisher_id']
+    publisher_name = data.get('publisher_name', 'Unknown')
+    if not publisher_name:
+        publisher_name = 'Unknown'
+    publisher = Publisher.query.filter_by(name=publisher_name).first()
+    if not publisher:
+        publisher = Publisher(name=publisher_name)
+        db.session.add(publisher)
+        db.session.flush()
+    publisher_id = publisher.id
 
     # Resolve Franchise
     franchise_id = None
@@ -222,6 +358,9 @@ def create_book():
         crew_data=data.get('crew', [])
     )
 
+    publisher = Publisher.query.filter_by(name=publisher_name).first()
+
+    publisher_id = publisher.id if publisher else None
     # Create Book
     book = Book(
         title=data['title'],
@@ -233,7 +372,8 @@ def create_book():
         pages=data.get('pages'),
         ageRating=data.get('age_rating'),
         synopsis=data.get('synopsis'),
-        publishDate=data.get('publish_date')
+        publishDate=data.get('publish_date'),
+        image_url = data.get('image_url')
     )
     db.session.add(book)
     db.session.commit()
@@ -241,7 +381,7 @@ def create_book():
     return jsonify({"id": book.id, "message": "Book created"}), HTTPStatus.CREATED
 
 
-@media_bp.route('/movie', methods=['POST'])
+@admin_bp.route('/movie', methods=['POST'])
 @jwt_required_middleware()
 @admin_required
 def create_movie():
@@ -300,19 +440,19 @@ def create_movie():
         ageRating=data.get('age_rating'),
         synopsis=data.get('synopsis'),
         publishDate=data.get('publish_date'),
-        imdbID=data.get('imdb_id')
+        imdbID=data.get('imdb_id'),
+        image_url=data.get('image_url')
     )
     db.session.add(movie)
     db.session.commit()
 
     return jsonify({"id": movie.id, "message": "Movie created"}), HTTPStatus.CREATED
 
-@media_bp.route('/show', methods=['POST'])
+@admin_bp.route('/show', methods=['POST'])
 @jwt_required_middleware()
 @admin_required
 def create_show():
     data = request.get_json()
-
     # Resolve Publisher
     if 'publisher_id' not in data:
         if 'publisher_name' in data:
@@ -364,14 +504,15 @@ def create_show():
         publisherID=publisher_id,
         ageRating=data.get('age_rating'),
         synopsis=data.get('synopsis'),
-        imdbID=data.get('imdb_id')
+        imdbID=data.get('imdb_id'),
+        image_url=data.get('image_url')
     )
     db.session.add(show)
     db.session.commit()
 
     return jsonify({"id": show.id, "message": "Show created"}), HTTPStatus.CREATED
 
-@media_bp.route('/shows/<int:show_id>/season', methods=['POST'])
+@admin_bp.route('/shows/<int:show_id>/season', methods=['POST'])
 @jwt_required_middleware()
 @admin_required
 def create_season(show_id):
@@ -401,14 +542,15 @@ def create_season(show_id):
         seasonNumber=data['season_number'],
         synopsis=data.get('synopsis'),
         publishDate=data.get('publish_date'),
-        episodeCount=data.get('episode_count')
+        episodeCount=data.get('episode_count'),
+        image_url=data.get('image_url')
     )
     db.session.add(season)
     db.session.commit()
 
     return jsonify({"id": season.id, "message": "Season created"}), HTTPStatus.CREATED
 
-@media_bp.route('/seasons/<int:season_id>/episode', methods=['POST'])
+@admin_bp.route('/seasons/<int:season_id>/episode', methods=['POST'])
 @jwt_required_middleware()
 @admin_required
 def create_episode(season_id):
@@ -439,14 +581,15 @@ def create_episode(season_id):
         typeID=type_id,
         synopsis=data.get('synopsis'),
         publishDate=data.get('publish_date'),
-        ageRating=data.get('age_rating')
+        ageRating=data.get('age_rating'),
+        image_url=data.get('image_url')
     )
     db.session.add(episode)
     db.session.commit()
 
     return jsonify({"id": episode.id, "message": "Episode created"}), HTTPStatus.CREATED
 
-admin_bp = Blueprint('admin', __name__, url_prefix='/api/admin')
+
 @admin_bp.route('/genres', methods=['POST'])
 @jwt_required_middleware()
 @admin_required
@@ -588,7 +731,7 @@ def delete_publisher(publisher_id):
     db.session.commit()
     return jsonify({'message': 'Publisher deleted'}), HTTPStatus.NO_CONTENT
 
-@admin_bp.route('/books/<int:book_id>', methods=['PUT'])
+@admin_bp.route('/book/<int:book_id>', methods=['PUT'])
 @jwt_required_middleware()
 @admin_required
 def update_book(book_id):
