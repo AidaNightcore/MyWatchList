@@ -6,6 +6,9 @@ import re
 from api.common.email_service import (
     send_account_creation_email,
 )
+from ..watchlist.models import Watchlist
+
+
 class AuthService:
     @staticmethod
     def validate_registration(data):
@@ -47,6 +50,8 @@ class AuthService:
         )
         new_user.set_password(data['password'])
         db.session.add(new_user)
+        db.session.flush()
+        watchlist = Watchlist(userID=new_user.id)
         db.session.commit()
         send_account_creation_email(new_user)
         return new_user

@@ -2,7 +2,7 @@ from http import HTTPStatus
 from flask import Blueprint, request, jsonify
 from sqlalchemy import text, desc, func
 
-from api.media.services import create_title_with_metadata, get_publisher_name_for_title, get_title_score
+from api.media.services import create_media_with_metadata, create_episode_with_metadata, get_element_details_for_title
 from api.middleware import jwt_required_middleware
 from .models import (
     Book, Movie, Show, Season, Episode,
@@ -31,11 +31,11 @@ def get_books():
         result.append({
             'id': book.id,
             'title': book.title,
-            'image_url': book.image_url,
+            'imgURL': book.imgURL,  # corect, nu img_url!
             'genres': [g.name for g in book.genres] if book.genres else [],
             'publisher': book.publisher.name if book.publisher else None,
             'publishDate': book.publishDate.isoformat() if book.publishDate else None,
-            'pages':book.pages,
+            'pages': book.pages,
             'score': score
         })
     return jsonify(result), HTTPStatus.OK
@@ -52,7 +52,7 @@ def get_movies():
         result.append({
             'id': movie.id,
             'title': movie.title,
-            'image_url': movie.image_url,
+            'imgURL': movie.imgURL,
             'genres': [g.name for g in movie.genres] if movie.genres else [],
             'publisher': movie.publisher.name if movie.publisher else None,
             'publishDate': movie.publishDate.isoformat() if movie.publishDate else None,
@@ -60,24 +60,23 @@ def get_movies():
         })
     return jsonify(result), HTTPStatus.OK
 
-
 @media_bp.route('/shows', methods=['GET'])
 @jwt_required_middleware()
 @cache_response(timeout=120)
 def get_shows():
     shows = Show.query.all()
-    results = []
+    result = []
     for show in shows:
         score = get_score_recursive('Show', show.id)
-        results.append({
+        result.append({
             'id': show.id,
             'title': show.title,
-            'image_url': show.image_url,
+            'imgURL': show.imgURL,
             'seasons_count': len(show.seasons),
             'genres': [g.name for g in show.genres] if show.genres else [],
             'score': score
         })
-    return jsonify(results), HTTPStatus.OK
+    return jsonify(result), HTTPStatus.OK
 
 @media_bp.route('/shows/<int:show_id>', methods=['GET'])
 @jwt_required_middleware()
@@ -86,7 +85,7 @@ def get_show(show_id):
     return jsonify({
         'id': show.id,
         'title': show.title,
-        'image_url': show.image_url,
+        'imgURL': show.imgURL,
         'franchise': show.franchise.title if show.franchise else None,
         'publisher': show.publisher.name if show.publisher else None,
         'seasons': [{
@@ -103,105 +102,51 @@ def get_show(show_id):
 @jwt_required_middleware()
 def get_all_titles():
     genres = request.args.getlist('genre')
-    publishers = request.args.getlist('publisher')
-    franchises = request.args.getlist('franchise')
-    types = request.args.getlist('type')
+    types = request.args.getlist('type')  # ["Book", "Movie", ...]
 
-    books_query = Book.query
-    if genres:
-        books_query = books_query.join(Book.genres).filter(Genre.name.in_(genres))
-    if publishers:
-        books_query = books_query.join(Book.publisher).filter(Publisher.name.in_(publishers))
-    if franchises:
-        books_query = books_query.join(Book.franchise).filter(Franchise.title.in_(franchises))
-
-    movies_query = Movie.query
-    if genres:
-        movies_query = movies_query.join(Movie.genres).filter(Genre.name.in_(genres))
-    if publishers:
-        movies_query = movies_query.join(Movie.publisher).filter(Publisher.name.in_(publishers))
-    if franchises:
-        movies_query = movies_query.join(Movie.franchise).filter(Franchise.title.in_(franchises))
-
-    shows_query = Show.query
-    if genres:
-        shows_query = shows_query.join(Show.genres).filter(Genre.name.in_(genres))
-    if publishers:
-        shows_query = shows_query.join(Show.publisher).filter(Publisher.name.in_(publishers))
-    if franchises:
-        shows_query = shows_query.join(Show.franchise).filter(Franchise.title.in_(franchises))
-
-    books = books_query.all()
-    movies = movies_query.all()
-    shows = shows_query.all()
-
-    def get_genres_for_title(title_id):
-        return (
-            db.session.query(Genre)
-            .join(TitleGenre, Genre.id == TitleGenre.genreID)
-            .filter(TitleGenre.titleID == title_id)
-            .all()
-        )
-
-    def serialize_book(book):
-        genres = get_genres_for_title(book.id)
-        return {
-            "id": book.id,
-            "title": book.title,
-            "type": "Book",
-            "genres": [{"id": g.id, "name": g.name} for g in genres],
-            "publisher": {"id": book.publisher.id, "name": book.publisher.name} if book.publisher else None,
-            "franchise": {"id": book.franchise.id, "title": book.franchise.title} if book.franchise else None,
-            "publishDate": book.publishDate.isoformat() if book.publishDate else None,
-            "image_url": getattr(book, "image_url", None),
-            "score": get_score_recursive('Book', book.id)
-        }
-
-    def serialize_movie(movie):
-        genres = get_genres_for_title(movie.id)
-        return {
-            "id": movie.id,
-            "title": movie.title,
-            "type": "Movie",
-            "genres": [{"id": g.id, "name": g.name} for g in genres],
-            "publisher": {"id": movie.publisher.id, "name": movie.publisher.name} if movie.publisher else None,
-            "franchise": {"id": movie.franchise.id, "title": movie.franchise.title} if movie.franchise else None,
-            "publishDate": movie.publishDate.isoformat() if movie.publishDate else None,
-            "image_url": getattr(movie, "image_url", None),
-            "score": get_score_recursive('Movie', movie.id)
-        }
-
-    def serialize_show(show):
-        genres = get_genres_for_title(show.id)
-        episode_dates = []
-        for season in getattr(show, "seasons", []):
-            for episode in getattr(season, "episodes", []):
-                if episode.publishDate:
-                    episode_dates.append(episode.publishDate)
-        first_publish_date = min(episode_dates) if episode_dates else None
-        return {
-            "id": show.id,
-            "title": show.title,
-            "type": "Show",
-            "genres": [{"id": g.id, "name": g.name} for g in genres],
-            "publisher": {"id": show.publisher.id, "name": show.publisher.name} if show.publisher else None,
-            "franchise": {"id": show.franchise.id, "title": show.franchise.title} if show.franchise else None,
-            "publishDate": first_publish_date.isoformat() if first_publish_date else None,
-            "image_url": getattr(show, "image_url", None),
-            "score": get_score_recursive('Show', show.id)
-        }
-
-    all_titles = [*map(serialize_book, books), *map(serialize_movie, movies), *map(serialize_show, shows)]
+    query = Title.query.join(Type, Title.elementType == Type.typeID)
     if types:
-        all_titles = [item for item in all_titles if item['type'] in types]
+        query = query.filter(Type.elementTypeName.in_(types))
+    if genres:
+        query = query.join(TitleGenre, Title.id == TitleGenre.titleID).join(Genre, TitleGenre.genreID == Genre.id).filter(Genre.name.in_(genres))
 
-    all_titles_sorted = sorted(
-        all_titles,
-        key=lambda t: t["publishDate"] if t["publishDate"] else str(1000000000 - t["id"]),
-        reverse=True
-    )
-    return jsonify(all_titles_sorted), HTTPStatus.OK
+    all_titles = query.all()
 
+    def get_child_obj(title):
+        type_name = title.media_type.elementTypeName if title.media_type else None
+        if type_name == "Book":
+            return Book.query.filter_by(title=title.title, typeID=title.elementType).first()
+        elif type_name == "Movie":
+            return Movie.query.filter_by(title=title.title, typeID=title.elementType).first()
+        elif type_name == "Episode":
+            return Episode.query.filter_by(title=title.title, typeID=title.elementType).first()
+        return None
+
+    result = []
+    for title in all_titles:
+        child = get_child_obj(title)
+        obj = {
+            'id': title.id,
+            'title': title.title,
+            'type': title.media_type.elementTypeName if title.media_type else None,
+            'genres': [g.name for g in title.genres],
+        }
+        if child:
+            obj['details'] = child.to_dict()
+        result.append(obj)
+    return jsonify(result), HTTPStatus.OK
+
+@media_bp.route('/titles/<int:title_id>', methods=['GET'])
+@jwt_required_middleware()
+def get_title_with_details(title_id):
+    title = Title.query.get_or_404(title_id)
+    return jsonify({
+        "id": title.id,
+        "title": title.title,
+        "type": title.media_type.elementTypeName if title.media_type else None,
+        "genres": [g.name for g in title.genres],
+        "details": get_element_details_for_title(title)
+    })
 
 @media_bp.route('/shows/<int:show_id>/seasons', methods=['GET'])
 @cache_response(timeout=120)
@@ -210,7 +155,7 @@ def get_seasons(show_id):
     show = Show.query.get_or_404(show_id)
     return jsonify([{
         'id': season.id,
-        'image_url': season.image_url,
+        'imgURL': season.imgURL,
         'season_number': season.seasonNumber,
         'episode_count': season.episodeCount
     } for season in show.seasons]), HTTPStatus.OK
@@ -221,7 +166,7 @@ def get_season(season_id):
     season = Season.query.get_or_404(season_id)
     return jsonify({
         'id': season.id,
-        'image_url': season.image_url,
+        'imgURL': season.imgURL,
         'season_number': season.seasonNumber,
         'publish_date': season.publishDate.isoformat() if season.publishDate else None,
         'episode_count': season.episodeCount,
@@ -232,7 +177,6 @@ def get_season(season_id):
         } for ep in season.episodes]
     }), HTTPStatus.OK
 
-
 @media_bp.route('/seasons/<int:season_id>/episodes', methods=['GET'])
 @jwt_required_middleware()
 def get_episodes(season_id):
@@ -240,7 +184,7 @@ def get_episodes(season_id):
     return jsonify([{
         'id': ep.id,
         'title': ep.title,
-        'image_url': ep.image_url,
+        'imgURL': ep.imgURL,
         'publish_date': ep.publishDate.isoformat() if ep.publishDate else None,
         'synopsis': ep.synopsis,
         'genres': [g.name for g in ep.genres]
@@ -253,12 +197,12 @@ def get_episode(episode_id):
     return jsonify({
         'id': episode.id,
         'title': episode.title,
-        'image_url': episode.image_url,
+        'imgURL': episode.imgURL,
         'publish_date': episode.publishDate.isoformat() if episode.publishDate else None,
         'synopsis': episode.synopsis,
         'season': {
             'id': episode.season.id,
-            'image_url': episode.season.image_url,
+            'imgURL': episode.season.imgURL,
             'season_number': episode.season.seasonNumber
         },
         'genres': [g.name for g in episode.genres],
@@ -269,16 +213,15 @@ def get_episode(episode_id):
 @jwt_required_middleware()
 def get_book(book_id):
     book = Book.query.get_or_404(book_id)
-
     return jsonify({
         'id': book.id,
         'title': book.title,
-        'image_url': book.image_url,
+        'imgURL': book.imgURL,
         'genres': [g.name for g in book.genres],
         'publisher': book.publisher.name if book.publisher else None,
         'franchise': book.franchise.title if book.franchise else None,
-        'publish_date': book.publishDate.isoformat() if book.publishDate else None,
-        'crew': book.crew  # assumes you defined a @property crew
+        'publishDate': book.publishDate.isoformat() if book.publishDate else None,
+        'crew': book.crew
     }), HTTPStatus.OK
 
 @media_bp.route('/movies/<int:movie_id>', methods=['GET'])
@@ -288,11 +231,11 @@ def get_movie(movie_id):
     return jsonify({
         'id': movie.id,
         'title': movie.title,
-        'image_url': movie.image_url,
+        'imgURL': movie.imgURL,
         'genres': [g.name for g in movie.genres],
         'publisher': movie.publisher.name if movie.publisher else None,
         'franchise': movie.franchise.title if movie.franchise else None,
-        'publish_date': movie.publishDate.isoformat() if movie.publishDate else None,
+        'publishDate': movie.publishDate.isoformat() if movie.publishDate else None,
         'crew': movie.crew
     }), HTTPStatus.OK
 
@@ -316,145 +259,33 @@ def search_media():
 @admin_required
 def create_book():
     data = request.get_json()
-    publisher_name = data.get('publisher_name', 'Unknown')
-    if not publisher_name:
-        publisher_name = 'Unknown'
-    publisher = Publisher.query.filter_by(name=publisher_name).first()
-    if not publisher:
-        publisher = Publisher(name=publisher_name)
-        db.session.add(publisher)
-        db.session.flush()
-    publisher_id = publisher.id
-
-    # Resolve Franchise
-    franchise_id = None
-    if 'franchise_id' in data:
-        franchise_id = data['franchise_id']
-    elif 'franchise_title' in data:
-        franchise = Franchise.query.filter_by(title=data['franchise_title']).first()
-        if not franchise:
-            franchise = Franchise(title=data['franchise_title'])
-            db.session.add(franchise)
-            db.session.flush()
-        franchise_id = franchise.id
-
-    genre_ids = []
-    if 'genre_names' in data:
-        for name in data['genre_names']:
-            genre = Genre.query.filter_by(name=name).first()
-            if not genre:
-                genre = Genre(name=name)
-                db.session.add(genre)
-                db.session.flush()
-            genre_ids.append(genre.id)
-    else:
-        genre_ids = data.get('genre_ids', [])
-
-    # Create Title and propagate genre & crew
-    title_id, type_id = create_title_with_metadata(
-        title_str=data['title'],
-        type_name='Book',
-        genre_ids=genre_ids,
-        crew_data=data.get('crew', [])
-    )
-
-    publisher = Publisher.query.filter_by(name=publisher_name).first()
-
-    publisher_id = publisher.id if publisher else None
-    # Create Book
-    book = Book(
-        title=data['title'],
-        typeID=type_id,
-        publisherID=publisher_id,
-        franchiseID=franchise_id,
-        goodreadsID=data.get('goodreads_id'),
-        isbnID=data.get('isbn_id'),
-        pages=data.get('pages'),
-        ageRating=data.get('age_rating'),
-        synopsis=data.get('synopsis'),
-        publishDate=data.get('publish_date'),
-        image_url = data.get('image_url')
-    )
-    db.session.add(book)
-    db.session.commit()
-
-    return jsonify({"id": book.id, "message": "Book created"}), HTTPStatus.CREATED
-
+    try:
+        result = create_media_with_metadata(data, "Book")
+        return jsonify({"id": result["media_id"], "typeID": result["typeID"], "titleID": result["titleID"], "message": "Book created"}), HTTPStatus.CREATED
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), HTTPStatus.BAD_REQUEST
 
 @admin_bp.route('/movie', methods=['POST'])
 @jwt_required_middleware()
 @admin_required
 def create_movie():
     data = request.get_json()
+    try:
+        result = create_media_with_metadata(data, "Movie")
+        return jsonify({"id": result["media_id"], "typeID": result["typeID"], "titleID": result["titleID"], "message": "Movie created"}), HTTPStatus.CREATED
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), HTTPStatus.BAD_REQUEST
 
-    # Resolve Publisher
-    if 'publisher_id' not in data:
-        if 'publisher_name' in data:
-            publisher = Publisher.query.filter_by(name=data['publisher_name']).first()
-            if not publisher:
-                publisher = Publisher(name=data['publisher_name'])
-                db.session.add(publisher)
-                db.session.flush()
-            publisher_id = publisher.id
-        else:
-            return jsonify({"error": "publisher_id or publisher_name required"}), HTTPStatus.BAD_REQUEST
-    else:
-        publisher_id = data['publisher_id']
-
-    # Resolve Franchise
-    franchise_id = None
-    if 'franchise_id' in data:
-        franchise_id = data['franchise_id']
-    elif 'franchise_title' in data:
-        franchise = Franchise.query.filter_by(title=data['franchise_title']).first()
-        if not franchise:
-            franchise = Franchise(title=data['franchise_title'])
-            db.session.add(franchise)
-            db.session.flush()
-        franchise_id = franchise.id
-
-    genre_ids = []
-    if 'genre_names' in data:
-        for name in data['genre_names']:
-            genre = Genre.query.filter_by(name=name).first()
-            if not genre:
-                genre = Genre(name=name)
-                db.session.add(genre)
-                db.session.flush()
-            genre_ids.append(genre.id)
-    else:
-        genre_ids = data.get('genre_ids', [])
-
-    title_id, type_id = create_title_with_metadata(
-        title_str=data['title'],
-        type_name='Movie',
-        genre_ids=genre_ids,
-        crew_data=data.get('crew', [])
-    )
-
-    movie = Movie(
-        title=data['title'],
-        typeID=type_id,
-        franchiseID=franchise_id,
-        publisherID=publisher_id,
-        ageRating=data.get('age_rating'),
-        synopsis=data.get('synopsis'),
-        publishDate=data.get('publish_date'),
-        imdbID=data.get('imdb_id'),
-        image_url=data.get('image_url')
-    )
-    db.session.add(movie)
-    db.session.commit()
-
-    return jsonify({"id": movie.id, "message": "Movie created"}), HTTPStatus.CREATED
 
 @admin_bp.route('/show', methods=['POST'])
 @jwt_required_middleware()
 @admin_required
 def create_show():
     data = request.get_json()
-    # Resolve Publisher
-    if 'publisher_id' not in data:
+    try:
+        publisher_id = None
         if 'publisher_name' in data:
             publisher = Publisher.query.filter_by(name=data['publisher_name']).first()
             if not publisher:
@@ -462,62 +293,26 @@ def create_show():
                 db.session.add(publisher)
                 db.session.flush()
             publisher_id = publisher.id
-        else:
-            return jsonify({"error": "publisher_id or publisher_name required"}), HTTPStatus.BAD_REQUEST
-    else:
-        publisher_id = data['publisher_id']
 
-    # Resolve Franchise
-    franchise_id = None
-    if 'franchise_id' in data:
-        franchise_id = data['franchise_id']
-    elif 'franchise_title' in data:
-        franchise = Franchise.query.filter_by(title=data['franchise_title']).first()
-        if not franchise:
-            franchise = Franchise(title=data['franchise_title'])
-            db.session.add(franchise)
-            db.session.flush()
-        franchise_id = franchise.id
+        show = Show(
+            title=data['title'],
+            publisherID=publisher_id,
+            synopsis=data.get('synopsis'),
+            imgURL=data.get('imgURL')
+        )
+        db.session.add(show)
+        db.session.commit()
+        return jsonify({"id": show.id, "message": "Show created"}), HTTPStatus.CREATED
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), HTTPStatus.BAD_REQUEST
 
-    genre_ids = []
-    if 'genre_names' in data:
-        for name in data['genre_names']:
-            genre = Genre.query.filter_by(name=name).first()
-            if not genre:
-                genre = Genre(name=name)
-                db.session.add(genre)
-                db.session.flush()
-            genre_ids.append(genre.id)
-    else:
-        genre_ids = data.get('genre_ids', [])
-
-    title_id, type_id = create_title_with_metadata(
-        title_str=data['title'],
-        type_name='Show',
-        genre_ids=genre_ids,
-        crew_data=data.get('crew', [])
-    )
-
-    show = Show(
-        title=data['title'],
-        franchiseID=franchise_id,
-        publisherID=publisher_id,
-        ageRating=data.get('age_rating'),
-        synopsis=data.get('synopsis'),
-        imdbID=data.get('imdb_id'),
-        image_url=data.get('image_url')
-    )
-    db.session.add(show)
-    db.session.commit()
-
-    return jsonify({"id": show.id, "message": "Show created"}), HTTPStatus.CREATED
 
 @admin_bp.route('/shows/<int:show_id>/season', methods=['POST'])
 @jwt_required_middleware()
 @admin_required
 def create_season(show_id):
     data = request.get_json()
-
     genre_ids = []
     if 'genre_names' in data:
         for name in data['genre_names']:
@@ -529,65 +324,43 @@ def create_season(show_id):
             genre_ids.append(genre.id)
     else:
         genre_ids = data.get('genre_ids', [])
-
-    title_id, type_id = create_title_with_metadata(
+    title_id, type_id = create_media_with_metadata(
         title_str=data['title'],
         type_name='Season',
         genre_ids=genre_ids,
         crew_data=data.get('crew', [])
     )
-
     season = Season(
         showID=show_id,
         seasonNumber=data['season_number'],
         synopsis=data.get('synopsis'),
         publishDate=data.get('publish_date'),
         episodeCount=data.get('episode_count'),
-        image_url=data.get('image_url')
+        imgURL=data.get('imgURL')
     )
     db.session.add(season)
     db.session.commit()
-
     return jsonify({"id": season.id, "message": "Season created"}), HTTPStatus.CREATED
 
-@admin_bp.route('/seasons/<int:season_id>/episode', methods=['POST'])
+
+@admin_bp.route('/episode', methods=['POST'])
 @jwt_required_middleware()
 @admin_required
-def create_episode(season_id):
+def create_episode():
     data = request.get_json()
-
-    genre_ids = []
-    if 'genre_names' in data:
-        for name in data['genre_names']:
-            genre = Genre.query.filter_by(name=name).first()
-            if not genre:
-                genre = Genre(name=name)
-                db.session.add(genre)
-                db.session.flush()
-            genre_ids.append(genre.id)
-    else:
-        genre_ids = data.get('genre_ids', [])
-
-    title_id, type_id = create_title_with_metadata(
-        title_str=data['title'],
-        type_name='Episode',
-        genre_ids=genre_ids,
-        crew_data=data.get('crew', [])
-    )
-
-    episode = Episode(
-        seasonID=season_id,
-        title=data['title'],
-        typeID=type_id,
-        synopsis=data.get('synopsis'),
-        publishDate=data.get('publish_date'),
-        ageRating=data.get('age_rating'),
-        image_url=data.get('image_url')
-    )
-    db.session.add(episode)
-    db.session.commit()
-
-    return jsonify({"id": episode.id, "message": "Episode created"}), HTTPStatus.CREATED
+    try:
+        result = create_episode_with_metadata(data)
+        return jsonify({
+            "show_id": result["show_id"],
+            "season_id": result["season_id"],
+            "episode_id": result["episode_id"],
+            "typeID": result["typeID"],
+            "titleID": result["titleID"],
+            "message": "Episode created"
+        }), HTTPStatus.CREATED
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), HTTPStatus.BAD_REQUEST
 
 
 @admin_bp.route('/genres', methods=['POST'])
@@ -685,6 +458,7 @@ def delete_show(show_id):
     db.session.delete(show)
     db.session.commit()
     return jsonify({'message': 'Show deleted'}), HTTPStatus.NO_CONTENT
+
 
 @admin_bp.route('/seasons/<int:season_id>', methods=['DELETE'])
 @jwt_required_middleware()
@@ -1000,15 +774,15 @@ def get_recommendations():
 @media_bp.route('/trending', methods=['GET'])
 @jwt_required_middleware()
 def get_media_trending():
-    type_ = request.args.get('type')
+    type_ = request.args.get('type')  # string, ex: 'Book', 'Movie'
     genre = request.args.get('genre')
-    order_by = request.args.get('order_by', 'score')  # or 'publishDate'
-    query = Title.query
+    order_by = request.args.get('order_by', 'score')
+
+    query = Title.query.join(Type, Title.elementType == Type.typeID)
     if type_:
-        query = query.join(Type).filter(Type.elementTypeName == type_)
+        query = query.filter(Type.elementTypeName == type_)
     if genre:
-        query = query.join(TitleGenre).join(Genre).filter(Genre.name == genre)
-    # Exemplu de trending: scor mediu descrescător, fallback la data publicării
+        query = query.join(TitleGenre, Title.id == TitleGenre.titleID).join(Genre, TitleGenre.genreID == Genre.id).filter(Genre.name == genre)
     if order_by == 'score':
         query = query.order_by(Title.averageScore.desc())
     elif order_by == 'publishDate':
@@ -1023,22 +797,26 @@ def get_media_trending():
         'publishDate': getattr(t, 'publishDate', None)
     } for t in trending])
 
+
 @media_bp.route('/search/advanced', methods=['GET'])
 @jwt_required_middleware()
 def media_advanced_search():
-    type_ = request.args.get('type')
+    type_ = request.args.get('type')  # ex. 'Book', 'Movie'
     genre = request.args.get('genre')
     year = request.args.get('year')
     min_score = request.args.get('min_score')
     q = request.args.get('q')
 
     query = Title.query
+
+    # JOIN cu Type
+    query = query.join(Type, Title.elementType == Type.typeID)
     if q:
         query = query.filter(Title.title.ilike(f"%{q}%"))
     if type_:
-        query = query.join(Type).filter(Type.elementTypeName == type_)
+        query = query.filter(Type.elementTypeName == type_)
     if genre:
-        query = query.join(TitleGenre).join(Genre).filter(Genre.name == genre)
+        query = query.join(TitleGenre, Title.id == TitleGenre.titleID).join(Genre, TitleGenre.genreID == Genre.id).filter(Genre.name == genre)
     if year:
         query = query.filter(db.extract('year', Title.publishDate) == int(year))
     if min_score and hasattr(Title, 'averageScore'):
@@ -1052,6 +830,7 @@ def media_advanced_search():
         "page": page,
         "per_page": per_page
     })
+
 
 @media_bp.route('/recommendations/multi-type', methods=['GET'])
 @jwt_required_middleware()

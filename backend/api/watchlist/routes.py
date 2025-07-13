@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from flask_jwt_extended import jwt_required, get_jwt_identity
+from flask_jwt_extended import get_jwt_identity
 from http import HTTPStatus
 from .models import Watchlist, WatchlistItem
 from api.middleware import jwt_required_middleware
@@ -16,7 +16,6 @@ from ..media.services import tastedive_recommend
 from ..user.models import User
 
 watchlist_bp = Blueprint('watchlist', __name__, url_prefix='/api/watchlists')
-
 
 @watchlist_bp.route('', methods=['GET'])
 @jwt_required_middleware()
@@ -63,24 +62,34 @@ def get_watchlist_by_type(type_name):
     return jsonify(filtered), HTTPStatus.OK
 
 
-@watchlist_bp.route('/items/<int:item_id>', methods=['DELETE'])
+@watchlist_bp.route('/items/<int:item_id>', methods=['GET'])
 @jwt_required_middleware()
-def delete_watchlist_item(item_id):
-    userID = int(get_jwt_identity())
+def get_watchlist_item_by_id(item_id):
+    user_id = int(get_jwt_identity())
     item = WatchlistItem.query.join(Watchlist).filter(
         WatchlistItem.id == item_id,
-        Watchlist.userID == userID  # camelCase!
+        Watchlist.userID == user_id
     ).first_or_404()
-    db.session.delete(item)
+    return jsonify(item.to_dict()), HTTPStatus.OK
+
+@watchlist_bp.route('/create', methods=['POST'])
+@jwt_required_middleware()
+def create_watchlist():
+    userID = int(get_jwt_identity())
+    existing = Watchlist.query.filter_by(userID=userID).first()
+    if existing:
+        return jsonify({"error": "Watchlist already exists"}), HTTPStatus.CONFLICT
+
+    watchlist = Watchlist(userID=userID)
+    db.session.add(watchlist)
     db.session.commit()
-    return jsonify({'message': 'Item deleted'}), HTTPStatus.NO_CONTENT
-
-
+    return jsonify({"message": "Watchlist created", "id": watchlist.id}), HTTPStatus.CREATED
 
 @watchlist_bp.route('/items', methods=['POST'])
 @jwt_required_middleware()
 def add_to_watchlist():
-    userID = int(get_jwt_identity())  # camelCase as in your SQL!
+    userID = int(get_jwt_identity())
+
     data = request.get_json()
     if not data or not data.get('titleID'):
         return jsonify({"error": "titleID is required"}), HTTPStatus.BAD_REQUEST
@@ -91,39 +100,46 @@ def add_to_watchlist():
         db.session.add(watchlist)
         db.session.commit()
 
-    # Unique constraint: one title per watchlist
-    existing = WatchlistItem.query.filter_by(watchlistID=watchlist.id, titleID=data['titleID']).first()
-    if existing:
-        return jsonify({"error": "Element already exists in watchlist"}), HTTPStatus.CONFLICT
+    item = WatchlistItem.query.filter_by(watchlistID=watchlist.id, titleID=data['titleID']).first()
+    created = False
+    if item:
+        # UPDATE logica
+        item.status = data.get('status', item.status)
+        item.score = data.get('score', item.score)
+        item.progress = data.get('progress', item.progress)
+        item.startDate = data.get('startDate', item.startDate)
+        item.endDate = data.get('endDate', item.endDate)
+        item.favourite = data.get('favourite', item.favourite)
+    else:
+        # CREATE logica
+        item = WatchlistItem(
+            watchlistID=watchlist.id,
+            titleID=data['titleID'],
+            status=data.get('status', 'planned'),
+            score=data.get('score'),
+            progress=data.get('progress', 0),
+            startDate=data.get('startDate'),
+            endDate=data.get('endDate'),
+            favourite=data.get('favourite', False),
+        )
+        db.session.add(item)
+        created = True
 
-    item = WatchlistItem(
-        watchlistID=watchlist.id,
-        titleID=data['titleID'],
-        status=data.get('status', 'planned'),
-        score=data.get('score'),
-        progress=data.get('progress', 0),
-        startDate=data.get('startDate'),
-        endDate=data.get('endDate'),
-        favourite=data.get('favourite', False),
-    )
-    if errors := item.validate():
-        return jsonify({"errors": errors}), HTTPStatus.BAD_REQUEST
-
-    # If status is completed, force max progress
+    # Enforce progress logic
     if item.status == "completed":
-        max_progress, _ = enforce_progress(item, float('inf'))
+        max_progress, _ = enforce_progress(item, float('inf'))  # asta returnează maximul calculat (un int)
         item.progress = max_progress
     else:
         orig_progress = item.progress
         new_progress, msg = enforce_progress(item, orig_progress)
-        if new_progress != orig_progress:
-            item.progress = new_progress
-            return jsonify({"errors": [f"Progress limited: {msg}"]}), HTTPStatus.BAD_REQUEST
+        item.progress = new_progress
 
-    db.session.add(item)
+    # Validare
+    if errors := item.validate():
+        return jsonify({"errors": errors}), HTTPStatus.BAD_REQUEST
+
     db.session.commit()
-    return jsonify(item.to_dict()), HTTPStatus.CREATED
-
+    return jsonify(item.to_dict()), (HTTPStatus.CREATED if created else HTTPStatus.OK)
 
 @watchlist_bp.route('/items/<int:item_id>', methods=['PUT'])
 @jwt_required_middleware()
@@ -132,29 +148,18 @@ def update_watchlist_item(item_id):
     data = request.get_json()
     item = WatchlistItem.query.join(Watchlist).filter(
         WatchlistItem.id == item_id,
-        Watchlist.userID == userID  # camelCase!
+        Watchlist.userID == userID
     ).first_or_404()
 
+    # Update all fields if present in data
+    for field in ['score', 'progress', 'favourite', 'startDate', 'endDate']:
+        if field in data:
+            setattr(item, field, data[field])
 
-    if 'score' in data:
-        item.score = data['score']
-    if 'progress' in data:
-        item.progress = data['progress']
-    if 'favourite' in data:
-        item.favourite = data['favourite']
-    if 'startDate' in data:
-        item.startDate = data['startDate']
-    if 'endDate' in data:
-        item.endDate = data['endDate']
-
-    status_updated = False
     if 'status' in data:
         item.status = data['status']
-        status_updated = True
-    if 'progress' in data:
-        item.progress = data['progress']
 
-    # If status is completed, force max progress
+    # Progress business logic
     if item.status == "completed":
         max_progress, _ = enforce_progress(item, float('inf'))
         item.progress = max_progress
@@ -165,7 +170,7 @@ def update_watchlist_item(item_id):
             item.progress = new_progress
             return jsonify({"errors": [f"Progress limited: {msg}"]}), HTTPStatus.BAD_REQUEST
 
-    # Validate as before
+    # Validation
     if errors := item.validate():
         return jsonify({"errors": errors}), HTTPStatus.BAD_REQUEST
 
@@ -251,128 +256,133 @@ def search_watchlist():
 
 
 
-@watchlist_bp.route('/export', methods=['GET'])
-@jwt_required_middleware()
-def export_watchlist_csv():
-    user_id = int(get_jwt_identity())
-    watchlist = Watchlist.query.filter_by(user_id=user_id).first()
-    if not watchlist or not watchlist.items:
-        return jsonify({"error": "No items to export"}), HTTPStatus.BAD_REQUEST
-
-    # Transformă datele într-o listă de dict
-    rows = []
-    for item in watchlist.items:
-        rows.append({
-            "id": item.id,
-            "titleID": item.titleID,
-            "titleName": item.title.title if item.title else "",
-            "status": item.status,
-            "score": item.score,
-            "progress": item.progress,
-            "startDate": item.startDate.isoformat() if item.startDate else "",
-            "endDate": item.endDate.isoformat() if item.endDate else "",
-            "favourite": item.favourite
-        })
-
-    # Creează DataFrame și exportă la CSV
-    df = pd.DataFrame(rows)
-    csv_data = df.to_csv(index=False)
-    return Response(
-        csv_data,
-        mimetype='text/csv',
-        headers={"Content-Disposition": "attachment;filename=watchlist.csv"}
-    )
-
-@watchlist_bp.route('/export/xlsx', methods=['GET'])
-@jwt_required_middleware()
-def export_watchlist_xlsx():
-    user_id = int(get_jwt_identity())
-    watchlist = Watchlist.query.filter_by(user_id=user_id).first()
-    if not watchlist or not watchlist.items:
-        return jsonify({"error": "No items to export"}), HTTPStatus.BAD_REQUEST
-
-    rows = [{
-        "id": item.id,
-        "titleID": item.titleID,
-        "titleName": item.title.title if item.title else "",
-        "status": item.status,
-        "score": item.score,
-        "progress": item.progress,
-        "startDate": item.startDate.isoformat() if item.startDate else "",
-        "endDate": item.endDate.isoformat() if item.endDate else "",
-        "favourite": item.favourite
-    } for item in watchlist.items]
-
-    df = pd.DataFrame(rows)
-    output = BytesIO()
-    df.to_excel(output, index=False)
-    output.seek(0)
-    return Response(
-        output.getvalue(),
-        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        headers={"Content-Disposition": "attachment;filename=watchlist.xlsx"}
-    )
-
-@watchlist_bp.route('/export/json', methods=['GET'])
-@jwt_required_middleware()
-def export_watchlist_json():
-    user_id = int(get_jwt_identity())
-    watchlist = Watchlist.query.filter_by(user_id=user_id).first()
-    if not watchlist or not watchlist.items:
-        return jsonify({"error": "No items to export"}), HTTPStatus.BAD_REQUEST
-
-    rows = [{
-        "id": item.id,
-        "titleID": item.titleID,
-        "titleName": item.title.title if item.title else "",
-        "status": item.status,
-        "score": item.score,
-        "progress": item.progress,
-        "startDate": item.startDate.isoformat() if item.startDate else "",
-        "endDate": item.endDate.isoformat() if item.endDate else "",
-        "favourite": item.favourite
-    } for item in watchlist.items]
-
-    df = pd.DataFrame(rows)
-    return Response(
-        df.to_json(orient="records", force_ascii=False, indent=2),
-        mimetype='application/json',
-        headers={"Content-Disposition": "attachment;filename=watchlist.json"}
-    )
-@watchlist_bp.route('/<int:user_id>/taste-graph', methods=['GET'])
-@jwt_required_middleware()
-def taste_graph(user_id):
-    user = User.query.get_or_404(user_id)
-    completed = [item.title.title for item in WatchlistItem.query.join(Watchlist)
-                 .filter(Watchlist.userID == user.id, WatchlistItem.status == 'completed', item.title != None)]
-
-    nodes = []
-    edges = []
-    for base in completed:
-        try:
-            recs = tastedive_recommend(base, limit=3)
-            for rec in recs.get('Similar', {}).get('Results', []):
-                nodes.append({"id": rec["Name"], "type": rec.get("Type")})
-                edges.append({"from": base, "to": rec["Name"]})
-        except Exception:
-            continue
-    # Deduplicate nodes
-    node_map = {}
-    for n in nodes:
-        node_map[n['id']] = n
-    return jsonify({
-        "nodes": list(node_map.values()),
-        "edges": edges
-    })
+# @watchlist_bp.route('/export', methods=['GET'])
+# @jwt_required_middleware()
+# def export_watchlist_csv():
+#     user_id = int(get_jwt_identity())
+#     watchlist = Watchlist.query.filter_by(user_id=user_id).first()
+#     if not watchlist or not watchlist.items:
+#         return jsonify({"error": "No items to export"}), HTTPStatus.BAD_REQUEST
+#
+#     # Transformă datele într-o listă de dict
+#     rows = []
+#     for item in watchlist.items:
+#         rows.append({
+#             "id": item.id,
+#             "titleID": item.titleID,
+#             "titleName": item.title.title if item.title else "",
+#             "status": item.status,
+#             "score": item.score,
+#             "progress": item.progress,
+#             "startDate": item.startDate.isoformat() if item.startDate else "",
+#             "endDate": item.endDate.isoformat() if item.endDate else "",
+#             "favourite": item.favourite
+#         })
+#
+#     # Creează DataFrame și exportă la CSV
+#     df = pd.DataFrame(rows)
+#     csv_data = df.to_csv(index=False)
+#     return Response(
+#         csv_data,
+#         mimetype='text/csv',
+#         headers={"Content-Disposition": "attachment;filename=watchlist.csv"}
+#     )
+#
+# @watchlist_bp.route('/export/xlsx', methods=['GET'])
+# @jwt_required_middleware()
+# def export_watchlist_xlsx():
+#     user_id = int(get_jwt_identity())
+#     watchlist = Watchlist.query.filter_by(user_id=user_id).first()
+#     if not watchlist or not watchlist.items:
+#         return jsonify({"error": "No items to export"}), HTTPStatus.BAD_REQUEST
+#
+#     rows = [{
+#         "id": item.id,
+#         "titleID": item.titleID,
+#         "titleName": item.title.title if item.title else "",
+#         "status": item.status,
+#         "score": item.score,
+#         "progress": item.progress,
+#         "startDate": item.startDate.isoformat() if item.startDate else "",
+#         "endDate": item.endDate.isoformat() if item.endDate else "",
+#         "favourite": item.favourite
+#     } for item in watchlist.items]
+#
+#     df = pd.DataFrame(rows)
+#     output = BytesIO()
+#     df.to_excel(output, index=False)
+#     output.seek(0)
+#     return Response(
+#         output.getvalue(),
+#         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+#         headers={"Content-Disposition": "attachment;filename=watchlist.xlsx"}
+#     )
+#
+# @watchlist_bp.route('/export/json', methods=['GET'])
+# @jwt_required_middleware()
+# def export_watchlist_json():
+#     user_id = int(get_jwt_identity())
+#     watchlist = Watchlist.query.filter_by(user_id=user_id).first()
+#     if not watchlist or not watchlist.items:
+#         return jsonify({"error": "No items to export"}), HTTPStatus.BAD_REQUEST
+#
+#     rows = [{
+#         "id": item.id,
+#         "titleID": item.titleID,
+#         "titleName": item.title.title if item.title else "",
+#         "status": item.status,
+#         "score": item.score,
+#         "progress": item.progress,
+#         "startDate": item.startDate.isoformat() if item.startDate else "",
+#         "endDate": item.endDate.isoformat() if item.endDate else "",
+#         "favourite": item.favourite
+#     } for item in watchlist.items]
+#
+#     df = pd.DataFrame(rows)
+#     return Response(
+#         df.to_json(orient="records", force_ascii=False, indent=2),
+#         mimetype='application/json',
+#         headers={"Content-Disposition": "attachment;filename=watchlist.json"}
+#     )
+# @watchlist_bp.route('/<int:user_id>/taste-graph', methods=['GET'])
+# @jwt_required_middleware()
+# def taste_graph(user_id):
+#     user = User.query.get_or_404(user_id)
+#     completed = [item.title.title for item in WatchlistItem.query.join(Watchlist)
+#                  .filter(Watchlist.userID == user.id, WatchlistItem.status == 'completed', item.title != None)]
+#
+#     nodes = []
+#     edges = []
+#     for base in completed:
+#         try:
+#             recs = tastedive_recommend(base, limit=3)
+#             for rec in recs.get('Similar', {}).get('Results', []):
+#                 nodes.append({"id": rec["Name"], "type": rec.get("Type")})
+#                 edges.append({"from": base, "to": rec["Name"]})
+#         except Exception:
+#             continue
+#     # Deduplicate nodes
+#     node_map = {}
+#     for n in nodes:
+#         node_map[n['id']] = n
+#     return jsonify({
+#         "nodes": list(node_map.values()),
+#         "edges": edges
+#     })
 
 @watchlist_bp.route('/<int:user_id>/recommendations/history', methods=['GET'])
 @jwt_required_middleware()
 def recommendation_history(user_id):
     user = User.query.get_or_404(user_id)
-    # For now, simulate by returning all past recommendations via TasteDive for completed
-    # (If you want a real DB log, add an auxiliary table in the future)
-    completed = [item.title.title for item in WatchlistItem.query.join(Watchlist)
-                 .filter(Watchlist.userID == user.id, WatchlistItem.status == 'completed', item.title != None)]
+    completed = [
+        item.title.title
+        for item in WatchlistItem.query.join(Watchlist)
+        .filter(
+            Watchlist.userID == user.id,
+            WatchlistItem.status == 'completed',
+            WatchlistItem.title != None  # Valid if relationship is defined
+        )
+    ]
 
     history = []
     for title in completed:

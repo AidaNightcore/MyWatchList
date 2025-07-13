@@ -30,7 +30,7 @@ PUBLIC_ENDPOINTS = {
     'media.get_genre',
     'media.get_genres',
     'media.get_all_titles'
-
+    'watchlist.get_watchlists'
 }
 
 def jwt_required_middleware():

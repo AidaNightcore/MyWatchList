@@ -25,7 +25,7 @@ import PublisherPage from "../pages/Media/PublisherPage";
 import SettingsPage from "../pages/User/SettingsPage";
 import ProposeMediaFormPage from "../pages/Media/ProposeMediaFormPage";
 import { MediaProvider } from "../contexts/MediaContext";
-
+import { WatchlistProvider } from "../contexts/WatchlistContext";
 // Protected route component
 const ProtectedRoute = () => {
   const { isAuthenticated, isLoading } = useAuth();
@@ -48,20 +48,32 @@ const AppRouter = () => {
       </Route>
 
       {/* Layout principal */}
+
       <Route element={<AppLayout />}>
         {/* Public */}
         <Route index element={<HomePage />} />
         <Route path="/recommendations" element={<RecommendationsPage />} />
         <Route
-          path="/media"
           element={
-            <MediaProvider>
+            <WatchlistProvider>
               <Outlet />
-            </MediaProvider>
+            </WatchlistProvider>
           }
         >
-          <Route index element={<MediaListPage />} />
-          <Route path=":id" element={<MediaDetailPage />} />
+          <Route
+            path="/media"
+            element={
+              <MediaProvider>
+                <WatchlistProvider>
+                  <Outlet />
+                </WatchlistProvider>
+              </MediaProvider>
+            }
+          >
+            <Route index element={<MediaListPage />} />
+            <Route path=":titleId" element={<MediaDetailPage />} />
+          </Route>
+          <Route path="/watchlist" element={<WatchlistPage />} />
         </Route>
         <Route path="/franchise" element={<FranchisePage />} />
         <Route path="/publisher" element={<PublisherPage />} />
@@ -70,10 +82,8 @@ const AppRouter = () => {
           <Route index element={<ForumPage />} />
           <Route path=":topicId" element={<TopicPage />} />
         </Route>
-
         {/* Profil public – vizibil oricui */}
         <Route path="/profile/:username" element={<ProfilePage />} />
-        <Route path="/watchlist" element={<WatchlistPage />} />
 
         {/* Propunere media (doar user logat) */}
         <Route element={<ProtectedRoute />}>

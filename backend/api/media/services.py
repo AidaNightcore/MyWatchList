@@ -1,5 +1,5 @@
 from datetime import datetime
-from api.media.models import Title, TitleGenre, Genre, Type, Book, Movie, Show
+from api.media.models import Title, TitleGenre, Genre, Type, Book, Movie, Show, Publisher
 from api.people.models import Crew, Job, Worker
 from api.social.models import Topic
 from api.common.database import db
@@ -17,85 +17,199 @@ def update_watch_status(entry, data):
         entry.endDate = datetime.utcnow().date()
 
 
-def create_title_with_metadata(title_str: str, type_name: str, genre_ids: list[int], crew_data: list[dict],
-                               publisher_name=None) -> tuple[int, int]:
-    # Ensure Type exists
-    media_type = Type.query.filter_by(elementTypeName=type_name).first()
-    if not media_type:
-        media_type = Type(elementTypeName=type_name)
-        db.session.add(media_type)
-        db.session.flush()
-
-    # Create Title
-    title = Title(title=title_str, elementType=media_type.id)
-    db.session.add(title)
-    db.session.flush()  # flush to assign ID before committing
-
-    # Link genres via TitleGenre
-    for genre_id in genre_ids:
-        db.session.add(TitleGenre(genreID=genre_id, titleID=title.id))
-
+def create_media_with_metadata(data, element_type):
+    # 1. Publisher
+    publisher_id = None
+    publisher_name = data.get('publisher_name')
     if publisher_name:
-        from api.media.models import Publisher
-        pub_name = publisher_name.strip() or "Unknown"
-        publisher = Publisher.query.filter_by(name=pub_name).first()
+        publisher = Publisher.query.filter_by(name=publisher_name.strip()).first()
         if not publisher:
-            publisher = Publisher(name=pub_name)
+            publisher = Publisher(name=publisher_name.strip())
             db.session.add(publisher)
             db.session.flush()
+        publisher_id = publisher.id
 
-    # Insert crew (acceptă și id, și nume)
+    # 2. Select model și câmpuri specifice
+    model_cls = {"Book": Book, "Movie": Movie}[element_type]
+    model_kwargs = {
+        "title": data['title'],
+        "publisherID": publisher_id,
+        "synopsis": data.get('synopsis'),
+        "publishDate": data.get('publishDate'),  # trebuie camelCase și numele din model!
+        "imgURL": data.get('imgURL')  # la fel!
+    }
+    if element_type == "Book":
+        model_kwargs["isbnID"] = data.get('isbnID')
+        model_kwargs["pages"] = data.get('pages')
+    elif element_type == "Movie":
+        model_kwargs["duration"] = data.get('duration')
+        model_kwargs["publishDate"] = data.get('publishDate')
+
+    # 3. Creează media_obj (fără typeID)
+    media_obj = model_cls(**model_kwargs)
+    db.session.add(media_obj)
+    db.session.flush()  # media_obj.id disponibil
+
+    # 4. Creează Type (id = media_obj.id)
+    media_type = Type(id=media_obj.id, elementTypeName=element_type)
+    db.session.add(media_type)
+    db.session.flush()  # media_type.typeID disponibil
+
+    # 5. Creează Title, cu titlul preluat din media_obj și elementType = typeID
+    title_entry = Title(title=media_obj.title, elementType=media_type.typeID)
+    db.session.add(title_entry)
+    db.session.flush()  # title_entry.id disponibil
+
+    # 6. Updatează media_obj cu typeID și titleID (dacă modelul are titleID ca FK)
+    media_obj.typeID = media_type.typeID
+    if hasattr(media_obj, "titleID"):
+        media_obj.titleID = title_entry.id
+    db.session.flush()
+
+    # 7. Genuri (legate la Title)
+    genre_names = data.get('genre_names', [])
+    for genre_name in genre_names:
+        genre_name = genre_name.strip()
+        if not genre_name:
+            continue
+        genre = Genre.query.filter_by(name=genre_name).first()
+        if not genre:
+            genre = Genre(name=genre_name)
+            db.session.add(genre)
+            db.session.flush()
+        # Asociază doar dacă nu există deja asocierea
+        if not TitleGenre.query.filter_by(genreID=genre.id, titleID=title_entry.id).first():
+            db.session.add(TitleGenre(genreID=genre.id, titleID=title_entry.id))
+
+    # 8. Crew (legate la Title)
+    crew_data = data.get('crew', [])
     for entry in crew_data:
-        worker_id = entry.get('worker_id')
-        job_id = entry.get('job_id')
-        worker = None
-        job = None
+        worker_name = entry.get('worker')
+        job_title = entry.get('job')
+        if not worker_name or not job_title:
+            continue
+        worker = Worker.query.filter_by(name=worker_name.strip()).first()
+        if not worker:
+            worker = Worker(name=worker_name.strip())
+            db.session.add(worker)
+            db.session.flush()
+        job = Job.query.filter_by(title=job_title.strip(), workerID=worker.id).first()
+        if not job:
+            job = Job(title=job_title.strip(), workerID=worker.id)
+            db.session.add(job)
+            db.session.flush()
+        existing_crew = Crew.query.filter_by(titleID=title_entry.id, jobID=job.id).first()
+        if not existing_crew:
+            db.session.add(Crew(titleID=title_entry.id, jobID=job.id))
 
-        # Dacă avem id-uri
-        if worker_id is not None and job_id is not None:
-            worker = Worker.query.get(worker_id)
-            if not worker:
-                raise ValueError(f"Worker with id {worker_id} does not exist.")
-
-            job = Job.query.get(job_id)
-            if not job:
-                raise ValueError(f"Job with id {job_id} does not exist.")
-
-            if job.workerID != worker.id:
-                raise ValueError(f"Job id {job_id} does not belong to worker id {worker_id}.")
-        # Dacă avem nume
-        elif entry.get('worker') and entry.get('job'):
-            worker_name = entry['worker'].strip()
-            job_title = entry['job'].strip()
-
-            # Worker unic pe name
-            worker = Worker.query.filter_by(name=worker_name).first()
-            if worker is None:
-                worker = Worker(name=worker_name)
-                db.session.add(worker)
-                db.session.flush()
-
-            # Job unic pe title+workerID
-            job = Job.query.filter_by(title=job_title, workerID=worker.id).first()
-            if job is None:
-                job = Job(title=job_title, workerID=worker.id)
-                db.session.add(job)
-                db.session.flush()
-        else:
-            raise ValueError("Each crew entry must have either (worker_id & job_id) or (worker & job)")
-
-        # Crew (unic pe titleID, jobID)
-        existing_crew = Crew.query.filter_by(titleID=title.id, jobID=job.id).first()
-        if existing_crew is None:
-            crew_row = Crew(titleID=title.id, jobID=job.id)
-            db.session.add(crew_row)
-
-    # Create Topic for this title
-    topic = Topic(titleID=title.id)
+    # 9. Topic (opțional, pentru forum/discuții, pe Title)
+    topic = Topic(titleID=title_entry.id)
     db.session.add(topic)
 
     db.session.commit()
-    return title.id, media_type.id
+    return {
+        "media_id": media_obj.id,
+        "typeID": media_type.typeID,
+        "titleID": title_entry.id
+    }
+
+from api.media.models import Show, Season, Episode, Genre, Title, TitleGenre, Publisher, Type
+from api.people.models import Worker, Job, Crew
+from api.social.models import Topic
+from api.common.database import db
+
+def create_episode_with_metadata(data):
+
+    # 1. Show
+    show_title = data['show_title'].strip()
+    show = Show.query.filter_by(title=show_title).first()
+    if not show:
+        show = Show(title=show_title)
+        db.session.add(show)
+        db.session.flush()
+
+    # 2. Season
+    season_number = data['season_number']
+    season = Season.query.filter_by(number=season_number, showID=show.id).first()
+    if not season:
+        season = Season(number=season_number, showID=show.id)
+        db.session.add(season)
+        db.session.flush()
+
+    # 3. Episode (fără typeID, fără titleID inițial)
+    episode_title = data['episode_title'].strip()
+    episode = Episode(
+        title=episode_title,
+        number=data['episode_number'],
+        seasonID=season.id,
+        synopsis=data.get('synopsis'),
+        publish_date=data.get('publish_date'),
+        image_url=data.get('image_url')
+    )
+    db.session.add(episode)
+    db.session.flush()  # episode.id devine disponibil
+
+    # 4. Type (doar pentru episod)
+    media_type = Type(id=episode.id, elementTypeName='Episode')
+    db.session.add(media_type)
+    db.session.flush()  # media_type.typeID devine disponibil
+
+    # 5. Title (pentru episod, legat la Type)
+    title_entry = Title(title=episode_title, elementType=media_type.typeID)
+    db.session.add(title_entry)
+    db.session.flush()  # title_entry.id devine disponibil
+
+    # 6. Update episode cu typeID și titleID
+    episode.typeID = media_type.typeID
+    if hasattr(episode, "titleID"):
+        episode.titleID = title_entry.id
+    db.session.flush()
+
+    # 7. Genuri (legate la title_entry)
+    genre_names = data.get('genre_names', [])
+    for genre_name in genre_names:
+        genre = Genre.query.filter_by(name=genre_name).first()
+        if not genre:
+            genre = Genre(name=genre_name)
+            db.session.add(genre)
+            db.session.flush()
+        db.session.add(TitleGenre(genreID=genre.id, titleID=title_entry.id))
+
+    # 8. Crew (legate la title_entry)
+    crew_data = data.get('crew', [])
+    for entry in crew_data:
+        worker_name = entry.get('worker')
+        job_title = entry.get('job')
+        if not worker_name or not job_title:
+            continue
+        worker = Worker.query.filter_by(name=worker_name.strip()).first()
+        if not worker:
+            worker = Worker(name=worker_name.strip())
+            db.session.add(worker)
+            db.session.flush()
+        job = Job.query.filter_by(title=job_title.strip(), workerID=worker.id).first()
+        if not job:
+            job = Job(title=job_title.strip(), workerID=worker.id)
+            db.session.add(job)
+            db.session.flush()
+        existing_crew = Crew.query.filter_by(titleID=title_entry.id, jobID=job.id).first()
+        if not existing_crew:
+            db.session.add(Crew(titleID=title_entry.id, jobID=job.id))
+
+    # 9. Topic (opțional)
+    topic = Topic(titleID=title_entry.id)
+    db.session.add(topic)
+
+    db.session.commit()
+    return {
+        "show_id": show.id,
+        "season_id": season.id,
+        "episode_id": episode.id,
+        "typeID": media_type.typeID,
+        "titleID": title_entry.id
+    }
+
+
 
 def tastedive_recommend(title, type_="show", limit=10):
     api_key = current_app.config.get('TASTEDIVE_API_KEY')
@@ -137,3 +251,20 @@ def get_publisher_name_for_title(title):
             return show.publisher.name
     return None
 
+def get_element_details_for_title(title):
+    if not title or not title.media_type:
+        return None
+    type_name = title.media_type.elementTypeName
+    if type_name == "Book":
+        obj = Book.query.filter_by(title=title.title, typeID=title.elementType).first()
+    elif type_name == "Movie":
+        obj = Movie.query.filter_by(title=title.title, typeID=title.elementType).first()
+    elif type_name == "Episode":
+        obj = Episode.query.filter_by(title=title.title, typeID=title.elementType).first()
+    elif type_name == "Show":
+        obj = Show.query.filter_by(title=title.title).first()
+    elif type_name == "Season":
+        obj = Season.query.filter_by(title=title.title).first()
+    else:
+        obj = None
+    return obj.to_dict() if obj else None

@@ -1,147 +1,88 @@
 import pandas as pd
 import requests
 
+# Configurare căi și endpoint
 CSV_BOOKS = "D:/ASE/Licenta/Data/books.csv"
 CSV_DATA = "D:/ASE/Licenta/Data/data.csv"
-MEDIA_API_URL = "http://localhost:5000/api/media/books"
-ADMIN_POST_URL = "http://localhost:5000/api/admin/book"
-ADMIN_PUT_URL = "http://localhost:5000/api/admin/book"
-TOKEN = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc1MjI3NTk3NCwianRpIjoiNzk0OWM0OTAtYmJhZS00Mjc1LWEyODUtYWEzMWY3NGFjYzg4IiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjIiLCJuYmYiOjE3NTIyNzU5NzQsImNzcmYiOiJmNWRkOGJiOC0wZDhmLTQ3ZDQtYWMyZi1kNTM3YTM3MGQ4NTciLCJleHAiOjE3NTIyNzk1NzR9.BHpvaU9KcLaQ9u5xCUOyI-AhHP0aKRR-A32RzN1Qiog"
-
-def normalize_date(date_val):
-    if pd.isnull(date_val):
-        return None
-    try:
-        return str(pd.to_datetime(date_val).date())
-    except Exception:
-        pass
-    try:
-        year = int(float(str(date_val)))
-        return f"{year}-01-01"
-    except Exception:
-        return None
-
-# Citire CSV cu eliminare spații din header
-df_data = pd.read_csv(CSV_DATA, on_bad_lines='skip')
-df_data.columns = [col.strip() for col in df_data.columns]
+ADMIN_BOOK_URL = "http://localhost:5000/api/admin/book"
+JWT_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc1MjQxMTAwOCwianRpIjoiMjgyYjIwNDQtNWVkNS00OTdmLWE3M2MtZDAyNzkzNGExNjkzIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NTI0MTEwMDgsImNzcmYiOiJjNmU0OTViYy1lZjdlLTQyYjAtOTg4Zi0wYmQ1ZmU4YzJlZTMiLCJleHAiOjE3NTI0MTQ2MDh9.N1fbLiyZAg1v_bHIx4ojrH9Ht5Z83AqLsNb2xi4hl_A"
 df_books = pd.read_csv(CSV_BOOKS, on_bad_lines='skip')
-df_books.columns = [col.strip() for col in df_books.columns]
+df_data = pd.read_csv(CSV_DATA, on_bad_lines='skip')
 
-# Creează un mapping pentru ISBN și pentru titlu+autori (ambele)
-isbn_map = {}
-title_authors_map = {}
+df_books.columns = [c.strip() for c in df_books.columns]
+df_data.columns = [c.strip() for c in df_data.columns]
 
-for _, row in df_data.iterrows():
-    isbn = str(row['isbn10']).strip() if pd.notnull(row['isbn10']) else None
-    title = str(row['title']).strip().lower() if pd.notnull(row['title']) else None
-    authors = set(name.strip().lower() for name in str(row['authors']).replace(";", ",").split(",")) if pd.notnull(row['authors']) else set()
-    synopsis = str(row['description']) if pd.notnull(row['description']) else None
+def normalize_date(val):
+    if pd.isnull(val) or not val or str(val).strip() in ['N/A', '']:
+        return None
+    try:
+        return str(pd.to_datetime(val, errors='coerce').date())
+    except Exception:
+        return None
 
-    # GENURI (cu filtrare life/fictitious)
-    categories = None
-    if pd.notnull(row.get('categories', None)):
-        raw_categories = [g.strip() for g in str(row['categories']).replace(";", ",").split(",")]
-        categories = []
-        for g in raw_categories:
-            g_lower = g.lower()
-            if "fictitious character" in g_lower:
-                continue
-            if g_lower == "slice of life":
-                categories.append(g)
-            elif "life" in g_lower:
-                categories.append(g.replace("life", "", 1).strip())
-            else:
-                categories.append(g)
-        categories = [g for g in categories if g and g.strip()]
-        if not categories:
-            categories = None
+def parse_list_column(val):
+    if pd.isnull(val) or not str(val).strip():
+        return []
+    for sep in [';', '|', ',','/']:
+        if sep in str(val):
+            return [s.strip() for s in str(val).split(sep) if s.strip()]
+    return [str(val).strip()]
 
-    image_url = str(row['thumbnail']) if 'thumbnail' in row and pd.notnull(row['thumbnail']) else None
-    entry = {
-        "authors": authors,
-        "synopsis": synopsis,
-        "categories": categories,
-        "image_url": image_url
-    }
-    if isbn:
-        isbn_map[isbn] = entry
-    if title:
-        title_authors_map.setdefault(title, []).append(entry)
+def best_row_match(row_b):
+    isbn = str(row_b.get("isbn", "")).strip()
+    title = str(row_b.get("title", "")).strip().lower()
+    # Caută întâi după ISBN (orice variantă)
+    for idx, row_d in df_data.iterrows():
+        for col in ['isbn', 'isbn10', 'isbn13']:
+            if col in row_d and pd.notnull(row_d[col]) and isbn and str(row_d[col]).strip() == isbn:
+                return row_d
+    # Dacă nu merge ISBN, caută după titlu
+    for idx, row_d in df_data.iterrows():
+        if 'title' in row_d and pd.notnull(row_d['title']):
+            if str(row_d['title']).strip().lower() == title:
+                return row_d
+    return {}
 
-# Map ISBN -> id din /api/media/books (pentru update)
-isbn_to_id = {}
-title_to_id = {}
-resp = requests.get(MEDIA_API_URL, headers={"Authorization": TOKEN})
-if resp.status_code == 200:
-    for book in resp.json():
-        if "isbn_id" in book and "id" in book and book["isbn_id"]:
-            isbn_to_id[str(book["isbn_id"]).strip()] = book["id"]
-        if "title" in book and "id" in book and book["title"]:
-            title_to_id[book["title"].strip().lower()] = book["id"]
-print(f"Loaded {len(isbn_to_id)} books with ISBN and {len(title_to_id)} by title from DB (via /api/media/books).")
-
-for idx, row in df_books.iterrows():
-    isbn_id = str(row['isbn']).strip() if pd.notnull(row['isbn']) else None
-    title = str(row['title']).strip() if pd.notnull(row['title']) else None
-    title_lower = title.lower() if title else None
-    publisher_name = str(row['publisher']) if pd.notnull(row['publisher']) else None
-    publish_date = normalize_date(row['publication_date']) if pd.notnull(row['publication_date']) else None
-    pages = int(row['num_pages']) if pd.notnull(row['num_pages']) else None
-
+def extract_payload(row_b, row_d):
+    title = row_b.get("title") or row_d.get("title")
+    publisher = row_b.get("publisher") or row_d.get("publisher")
+    genres = parse_list_column(row_b.get("genres") or row_d.get("categories"))
     crew = []
-    author_set = set()
-    if pd.notnull(row['authors']):
-        names = [name.strip() for name in str(row['authors']).replace("/", ",").split(",")]
-        for name in names:
-            if name:
-                crew.append({"worker": name, "job": "Author"})
-                author_set.add(name.lower())
-
-    # Matching logic:
-    entry = None
-    # 1. Prioritar după ISBN
-    if isbn_id and isbn_id in isbn_map:
-        entry = isbn_map[isbn_id]
-    # 2. Altfel, după titlu + cel puțin un autor comun
-    elif title_lower and title_lower in title_authors_map and author_set:
-        for candidate in title_authors_map[title_lower]:
-            if candidate["authors"] & author_set:
-                entry = candidate
-                break
-
-    synopsis = entry["synopsis"] if entry else None
-    categories = entry["categories"] if entry else []
-    image_url = entry["image_url"] if entry else None
-
-    data = {
+    authors = parse_list_column(row_b.get("authors") or row_d.get("authors"))
+    for a in authors:
+        crew.append({"worker": a, "job": "Author"})
+    synopsis = row_b.get("synopsis") or row_d.get("description") or ""
+    isbnID = row_b.get("isbn") or row_d.get("isbn10") or row_d.get("isbn13") or row_d.get("isbn")
+    pages = row_b.get("num_pages") or row_d.get("num_pages")
+    imgURL = row_b.get("imgURL") or row_b.get("image_url") or row_d.get("image_url") or row_d.get("thumbnail")
+    publishDate = row_b.get("publishDate") or row_b.get("publication_date") or row_d.get("publishDate") or row_d.get("publication_date")
+    publishDate = normalize_date(publishDate)
+    payload = {
         "title": title,
+        "publisher_name": publisher,
+        "genre_names": genres,
         "crew": crew,
-        "genre_names": categories
+        "synopsis": synopsis,
+        "isbnID": isbnID,
+        "pages": int(pages) if pd.notnull(pages) and str(pages).isdigit() else None,
+        "imgURL": imgURL,
+        "publishDate": publishDate
     }
-    if publisher_name:
-        data["publisher_name"] = publisher_name
-    if synopsis:
-        data["synopsis"] = synopsis
-    if publish_date:
-        data["publish_date"] = publish_date
-    if isbn_id:
-        data["isbn_id"] = isbn_id
-    if pages:
-        data["pages"] = pages
-    if image_url:
-        data["image_url"] = image_url
+    print(payload)
+    return {k: v for k, v in payload.items() if v is not None}
 
-    # Matching pentru id în DB:
-    book_id = isbn_to_id.get(isbn_id) if isbn_id else None
-    if not book_id and title_lower:
-        book_id = title_to_id.get(title_lower)
 
-    if book_id:
-        put_url = f"{ADMIN_PUT_URL}/{book_id}"
-        resp = requests.put(put_url, json=data, headers={"Authorization": TOKEN})
-        print(f"{idx + 1}/{len(df_books)} - UPDATE: {resp.status_code}: {resp.text}")
-    else:
-        resp = requests.post(ADMIN_POST_URL, json=data, headers={"Authorization": TOKEN})
-        print(f"{idx + 1}/{len(df_books)} - POST: {resp.status_code}: {resp.text}")
+headers = {"Authorization": f"Bearer {JWT_TOKEN}", "Content-Type": "application/json"}
+START_IDX=0
+for idx, row_b in df_books.iterrows():
+    if idx < START_IDX:
+        continue
+    row_d = best_row_match(row_b)
+    payload = extract_payload(row_b, row_d)
+    try:
+        r = requests.post(ADMIN_BOOK_URL, json=payload, headers=headers, timeout=10)
+        print(f"{idx+1}. {payload.get('title')}: {r.status_code} {r.text}")
+    except Exception as e:
+        print(f"EROARE la {payload.get('title')}: {e}")
 
-print("Import completat pentru books.")
+print("Gata popularea!")

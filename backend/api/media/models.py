@@ -40,8 +40,9 @@ class Publisher(db.Model):
 
 class Type(db.Model):
     __tablename__ = 'Type'
-    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    typeID = db.Column(db.Integer, primary_key=True, autoincrement=True)
     elementTypeName = db.Column('elementTypeName', db.String(255))
+    id = db.Column(db.Integer)
 
     # Relationships
     books = relationship('Book', back_populates='media_type')
@@ -54,7 +55,7 @@ class Title(db.Model):
     __tablename__ = 'Titles'
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     title = db.Column(db.String(255))
-    elementType = db.Column(db.Integer, db.ForeignKey('Type.id'))
+    elementType = db.Column(db.Integer, db.ForeignKey('Type.typeID'))
 
     # Relationships
     media_type = relationship('Type', back_populates='titles')
@@ -85,7 +86,7 @@ class Book(db.Model):
     __tablename__ = 'Book'
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     title = db.Column(db.String(255))
-    typeID = db.Column(db.Integer, db.ForeignKey('Type.id'))
+    typeID = db.Column(db.Integer, db.ForeignKey('Type.typeID'))
     franchiseID = db.Column(db.Integer, db.ForeignKey('Franchise.id'), nullable=True)
     publisherID = db.Column(db.Integer, db.ForeignKey('Publisher.id'))
     ageRating = db.Column(db.String(255))
@@ -94,7 +95,7 @@ class Book(db.Model):
     isbnID = db.Column(db.String(20))
     goodreadsID = db.Column(db.String(20))
     pages = db.Column(db.Integer)
-    image_url = db.Column(db.String(500))
+    imgURL = db.Column(db.String(500))
 
     # Relationships
     media_type = relationship('Type', back_populates='books')
@@ -135,7 +136,7 @@ class Book(db.Model):
             'isbnID': self.isbnID,
             'goodreadsID': self.goodreadsID,
             'pages': self.pages,
-            'image_url': self.image_url,
+            'imgURL': self.imgURL,
             'genres': [g.name for g in self.genres],
             'crew': self.crew,
         }
@@ -145,14 +146,15 @@ class Movie(db.Model):
     __tablename__ = 'Movie'
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     title = db.Column(db.String(255))
-    typeID = db.Column(db.Integer, db.ForeignKey('Type.id'))
+    typeID = db.Column(db.Integer, db.ForeignKey('Type.typeID'))
     franchiseID = db.Column(db.Integer, db.ForeignKey('Franchise.id'))
     publisherID = db.Column(db.Integer, db.ForeignKey('Publisher.id'))
     ageRating = db.Column(db.String(255))
     synopsis = db.Column(db.Text)
     publishDate = db.Column(db.Date)
     imdbID = db.Column(db.String(16))
-    image_url = db.Column(db.String(500))
+    imgURL = db.Column(db.String(500))
+    duration = db.Column(db.Integer)
     # Relationships
     media_type = relationship('Type', back_populates='movies')
     franchise = relationship('Franchise', back_populates='movies')
@@ -190,7 +192,7 @@ class Movie(db.Model):
             'synopsis': self.synopsis,
             'publishDate': self.publishDate.isoformat() if self.publishDate else None,
             'imdbID': self.imdbID,
-            'image_url': self.image_url,
+            'imgURL': self.imgURL,
             'genres': [g.name for g in self.genres],
             'crew': self.crew,
         }
@@ -205,7 +207,7 @@ class Show(db.Model):
     ageRating = db.Column(db.String(255))
     synopsis = db.Column(db.Text)
     imdbID = db.Column(db.Integer)
-    image_url = db.Column(db.String(500))
+    imgURL= db.Column(db.String(500))
 
     # Relationships
     franchise = relationship('Franchise', back_populates='shows')
@@ -240,7 +242,7 @@ class Show(db.Model):
             'ageRating': self.ageRating,
             'synopsis': self.synopsis,
             'imdbID': self.imdbID,
-            'image_url': self.image_url,
+            'imgURL': self.imgURL,
             'genres': [g.name for g in self.genres],
             'crew': [c for c in self.crew],  # crew poate conține dicturi sau obiecte, vezi cum vrei să serialiezi
             'seasons': [season.id for season in self.seasons],
@@ -256,7 +258,7 @@ class Season(db.Model):
     synopsis = db.Column(db.Text)
     publishDate = db.Column(db.Date)
     episodeCount = db.Column(db.Integer)
-    image_url = db.Column(db.String(500))
+    imgURL = db.Column(db.String(500))
 
     # Relationships
     show = relationship('Show', back_populates='seasons')
@@ -286,7 +288,7 @@ class Season(db.Model):
             'synopsis': self.synopsis,
             'publishDate': self.publishDate.isoformat() if self.publishDate else None,
             'episodeCount': self.episodeCount,
-            'image_url': self.image_url,
+            'imgURL': self.imgURL,
             'genres': [g.name for g in self.genres],
             'crew': [c for c in self.crew],
             'episodes': [ep.id for ep in self.episodes],  # sau [ep.to_dict() for ep in self.episodes] pentru detalii
@@ -297,13 +299,13 @@ class Episode(db.Model):
     __tablename__ = 'Episode'
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     title = db.Column(db.String(255))
-    typeID = db.Column(db.Integer, db.ForeignKey('Type.id'))
+    typeID = db.Column(db.Integer, db.ForeignKey('Type.typeID'))
     ageRating = db.Column(db.String(255))
     synopsis = db.Column(db.Text)
     publishDate = db.Column(db.Date)
     seasonID = db.Column(db.Integer, db.ForeignKey('Season.id'))
-    image_url = db.Column(db.String(500))
-
+    imgURL = db.Column(db.String(500))
+    duration = db.Column(db.Integer)
     # Relationships
     media_type = relationship('Type', back_populates='episodes')
     season = relationship('Season', back_populates='episodes')
@@ -335,7 +337,7 @@ class Episode(db.Model):
             'synopsis': self.synopsis,
             'publishDate': self.publishDate.isoformat() if self.publishDate else None,
             'seasonID': self.seasonID,
-            'image_url': self.image_url,
+            'imgURL': self.imgURL,
             'genres': [g.name for g in self.genres],
             'crew': self.crew,
         }

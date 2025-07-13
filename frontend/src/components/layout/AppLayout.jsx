@@ -22,7 +22,15 @@ const AppLayout = () => {
   };
 
   return (
-    <Box sx={{ display: "flex", minHeight: "100vh", flexDirection: "column" }}>
+    <Box
+      sx={{
+        display: "flex",
+        minHeight: "100vh",
+        flexDirection: "column",
+        width: "100vw", // Full viewport width
+        overflowX: "hidden", // Prevent scrollbars if needed
+      }}
+    >
       <CssBaseline />
       <Navbar
         drawerWidth={drawerWidth}
@@ -34,23 +42,22 @@ const AppLayout = () => {
         component="main"
         sx={{
           flexGrow: 1,
-          width: { sm: `calc(100% - ${drawerWidth}px)` },
+          width: "100vw", // Ensure main takes full viewport width
           display: "flex",
           flexDirection: "column",
         }}
       >
-        <Toolbar /> {/* Spacer for fixed navbar */}
-        {/* Page content */}
+        <Toolbar />
         <Box
           sx={{
             flexGrow: 1,
             p: { xs: 2, sm: 3 },
-            maxWidth: "1400px",
-            width: "100%",
-            margin: "0 auto",
+            width: "100vw", // Ensure inner container is also full width
+            maxWidth: "100vw", // Prevent accidental maxWidth restriction
+            boxSizing: "border-box",
           }}
         >
-          <Outlet /> {/* This renders the child routes */}
+          <Outlet />
         </Box>
       </Box>
       <Footer />

@@ -7,7 +7,7 @@ from api import db
 
 class Watchlist(db.Model):
     __tablename__ = 'Watchlist'
-    id = db.Column(db.Integer, primary_key=True)
+    id = db.Column(db.Integer, primary_key=True,autoincrement=True)
     userID = db.Column(db.Integer, db.ForeignKey('User.id'), nullable=False)
 
     # Relationships
@@ -17,7 +17,7 @@ class Watchlist(db.Model):
 
 class WatchlistItem(db.Model):
     __tablename__ = 'WatchElement'
-    id = db.Column(db.Integer, primary_key=True)
+    id = db.Column(db.Integer, primary_key=True,autoincrement=True)
     watchlistID = db.Column(db.Integer, db.ForeignKey('Watchlist.id'), nullable=False)
     titleID = db.Column(db.Integer, db.ForeignKey('Titles.id'), nullable=False)
     status = db.Column(db.String(50), nullable=False, default='planned')
@@ -62,6 +62,7 @@ class WatchlistItem(db.Model):
         return errors
 
     def to_dict(self):
+        from api.media.services import get_element_details_for_title
         return {
             'id': self.id,
             'titleID': self.titleID,
@@ -73,6 +74,9 @@ class WatchlistItem(db.Model):
             'favourite': self.favourite,
             'title': {
                 'id': self.title.id,
-                'name': self.title.title
-            } if self.title else None
+                'name': self.title.title,
+                'type': self.title.media_type.elementTypeName if self.title and self.title.media_type else None,
+                'genres': [g.name for g in self.title.genres] if self.title else []
+            } if self.title else None,
+            'element_details': get_element_details_for_title(self.title) if self.title else None
         }
