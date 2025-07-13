@@ -5,6 +5,8 @@ from .models import User, UserRelationship
 from api.middleware import jwt_required_middleware
 from ..common.database import db
 from api.middleware.permissions import admin_required, moderator_required
+from ..media.models import Book, Movie, Show, Episode
+from ..watchlist.models import Watchlist
 
 user_bp = Blueprint('user', __name__, url_prefix='/api/users')
 
@@ -238,7 +240,6 @@ def update_user_email(user_id):
     send_email_change_email(user, old_email, user.email)  # <-- send email here
     return jsonify({"message": "Email updated"}), HTTPStatus.OK
 
-
 @user_bp.route('/<int:user_id>/password', methods=['PUT'])
 @jwt_required_middleware()
 def update_user_password(user_id):
@@ -285,4 +286,149 @@ def update_user_username(user_id):
     user.username = data['username']
     db.session.commit()
     return jsonify({"message": "Username updated"}), HTTPStatus.OK
+
+@user_bp.route('/profile-summary/<int:user_id>', methods=['GET'])
+def profile_summary(user_id):
+    user = User.query.get_or_404(user_id)
+    watchlist = Watchlist.query.filter_by(userID=user_id).first()
+    if not watchlist or not watchlist.items:
+        return jsonify({
+            "username": user.username,
+            "id": user.id,
+            "counts": {},
+            "genre_distribution": {},
+            "status_by_genre": {},
+            "pages_read": 0,
+            "minutes_watched": 0
+        }), 200
+
+    counts = {}
+    genre_distribution = {}
+    status_by_genre = {}
+    pages_read = 0
+    minutes_watched = 0
+
+    for item in watchlist.items:
+        st = item.status
+        counts[st] = counts.get(st, 0) + 1
+
+        # Extrage titlul asociat și detaliile lui
+        title = item.title
+        details = getattr(item, "element_details", None) or {}
+
+        genres = []
+        pages = 0
+        duration = 0
+
+        # Genuri
+        if title and title.genres:
+            genres = [g.name for g in title.genres]
+        # Pagini (doar pentru cărți)
+        if details and hasattr(details, 'pages') and details.pages:
+            pages = details.pages
+        # Filme
+        if details and hasattr(details, 'duration') and details.duration and title.media_type.elementTypeName == "Movie":
+            if st == "completed":
+                minutes_watched += details.duration
+        # Cărți
+        if st == "completed" and title.media_type.elementTypeName == "Book":
+            pages_read += pages
+        # Episoade/Show
+        if title and title.media_type.elementTypeName == "Show":
+            progress = item.progress or 0
+            all_episodes = []
+            if hasattr(details, 'seasons'):
+                for season in getattr(details, 'seasons', []):
+                    all_episodes.extend(season.get('episodes', []))
+            if all_episodes:
+                episode_durations = [ep.get('duration', 0) for ep in all_episodes if ep.get('duration')]
+                avg_ep_duration = sum(episode_durations) / len(episode_durations) if episode_durations else 0
+                minutes_watched += progress * avg_ep_duration
+            else:
+                DEFAULT_EPISODE_MIN = 24
+                minutes_watched += progress * DEFAULT_EPISODE_MIN
+        if title and title.media_type.elementTypeName == "Episode":
+            if details and hasattr(details, 'duration') and details.duration and st == "completed":
+                minutes_watched += details.duration
+
+        for g in genres:
+            genre_distribution[g] = genre_distribution.get(g, 0) + 1
+            if g not in status_by_genre:
+                status_by_genre[g] = {}
+            status_by_genre[g][st] = status_by_genre[g].get(st, 0) + 1
+
+    # FINAL: Adaugă return aici!
+    return jsonify({
+        "username": user.username,
+        "id": user.id,
+        "counts": counts,
+        "genre_distribution": genre_distribution,
+        "status_by_genre": status_by_genre,
+        "pages_read": pages_read,
+        "minutes_watched": minutes_watched
+    }), 200
+
+@user_bp.route('/activity-history/<int:user_id>', methods=['GET'])
+@jwt_required_middleware()
+def activity_history(user_id):
+    watchlist = Watchlist.query.filter_by(userID=user_id).first()
+    if not watchlist or not watchlist.items:
+        return jsonify([]), HTTPStatus.OK
+
+    items = sorted(
+        watchlist.items,
+        key=lambda i: getattr(i, 'updated_at', None) or getattr(i, 'startDate', None) or getattr(i, 'endDate', None) or i.id,
+        reverse=True
+    )[:10]
+
+    result = []
+    for item in items:
+        title = item.title
+        if not title:
+            continue
+
+        type_name = title.media_type.elementTypeName if title.media_type else None
+        image_url = None
+        publish_date = None
+
+        # Extrage imgURL/publishDate în funcție de tip (recomandare: folosește first by title/titleID)
+        if type_name == "Book":
+            book = Book.query.filter_by(title=title.title, typeID=title.elementType).first()
+            if book:
+                image_url = book.imgURL
+                publish_date = book.publishDate.isoformat() if book.publishDate else None
+        elif type_name == "Movie":
+            movie = Movie.query.filter_by(title=title.title, typeID=title.elementType).first()
+            if movie:
+                image_url = movie.imgURL
+                publish_date = movie.publishDate.isoformat() if movie.publishDate else None
+        elif type_name == "Show":
+            show = Show.query.filter_by(title=title.title).first()
+            if show:
+                image_url = show.imgURL
+                # Shows don't have publishDate, can be ignored or set as None
+        elif type_name == "Episode":
+            episode = Episode.query.filter_by(title=title.title, typeID=title.elementType).first()
+            if episode:
+                image_url = episode.imgURL
+                publish_date = episode.publishDate.isoformat() if episode.publishDate else None
+
+        # Fallback la None dacă nu există
+        if not image_url:
+            image_url = None
+
+        result.append({
+            "id": title.id,
+            "title": title.title,
+            "type": type_name,
+            "status": item.status,
+            "date": str(getattr(item, 'startDate', None) or getattr(item, 'endDate', None) or ""),
+            "score": item.score,
+            "image_url": image_url,
+            "publishDate": publish_date,
+        })
+
+    return jsonify(result), HTTPStatus.OK
+
+
 

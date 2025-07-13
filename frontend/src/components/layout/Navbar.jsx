@@ -88,7 +88,7 @@ const Navbar = () => {
   const userMenu = [
     {
       label: "Profile",
-      path: user?.username ? `/profile/${user.username}` : "/",
+      path: user ? `/profile/${user.id}` : "/",
     },
     { label: "Watchlist", path: "/watchlist" },
     { label: "Propose", path: "/propose-media" },
@@ -101,7 +101,6 @@ const Navbar = () => {
       },
     },
   ];
-
   // Meniu pentru utilizatori neautentificați
   const guestMenu = [
     { label: "Login", path: "/login" },
@@ -278,7 +277,9 @@ const Navbar = () => {
                           navigate(item.path);
                           handleCloseUserMenu();
                         }}
-                        disabled={!item.path || item.path === "/profile/"}
+                        disabled={
+                          !item.path || item.path === "/profile/${user.id}"
+                        }
                       >
                         <Typography textAlign="center">{item.label}</Typography>
                       </MenuItem>

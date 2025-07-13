@@ -30,6 +30,18 @@ def get_watchlists():
         grouped.setdefault(item.status, []).append(item.to_dict())
     return jsonify(grouped), HTTPStatus.OK
 
+@watchlist_bp.route('/user/<int:user_id>', methods=['GET'])
+def get_user_watchlist(user_id):
+    watchlist = Watchlist.query.filter_by(userID=user_id).first()
+    if not watchlist:
+        return jsonify({"message": "No watchlist found"}), HTTPStatus.NOT_FOUND
+
+    grouped = {}
+    for item in watchlist.items:
+        grouped.setdefault(item.status, []).append(item.to_dict())
+    return jsonify(grouped), HTTPStatus.OK
+
+
 @watchlist_bp.route('/<string:status>', methods=['GET'])
 @jwt_required_middleware()
 def get_watchlist_by_status(status):
@@ -177,7 +189,6 @@ def update_watchlist_item(item_id):
     db.session.commit()
     return jsonify(item.to_dict()), HTTPStatus.OK
 
-
 @watchlist_bp.route('/mutual/<int:user1_id>/<int:user2_id>', methods=['GET'])
 @jwt_required_middleware()
 def get_mutual_watchlist_items(user1_id, user2_id):
@@ -192,7 +203,6 @@ def get_mutual_watchlist_items(user1_id, user2_id):
 
     mutual_titles = [item.to_dict() for item in wl1.items if item.titleID in mutual_ids]
     return jsonify(mutual_titles), HTTPStatus.OK
-
 
 @watchlist_bp.route('/items', methods=['GET'])
 @jwt_required_middleware()
@@ -215,8 +225,6 @@ def get_all_watchlist_items_paginated():
         "per_page": per_page,
         "pages": (total + per_page - 1) // per_page
     }), HTTPStatus.OK
-
-
 
 @watchlist_bp.route('/search', methods=['GET'])
 @jwt_required_middleware()
@@ -253,8 +261,6 @@ def search_watchlist():
         "per_page": per_page,
         "pages": (total + per_page - 1) // per_page
     }), HTTPStatus.OK
-
-
 
 # @watchlist_bp.route('/export', methods=['GET'])
 # @jwt_required_middleware()

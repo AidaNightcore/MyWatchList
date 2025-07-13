@@ -10,8 +10,10 @@ import {
   Grid,
 } from "@mui/material";
 import StarIcon from "@mui/icons-material/Star";
+import { useNavigate, Link } from "react-router-dom";
 
 export default function MoviePage({ movie }) {
+  const navigate = useNavigate();
   return (
     <Card
       sx={{
@@ -61,7 +63,20 @@ export default function MoviePage({ movie }) {
           </Box>
           <Box sx={{ mb: 2 }}>
             <Typography variant="body1" color="text.secondary">
-              <strong>Publisher:</strong> {movie.publisher || "-"}
+              <strong>Publisher:</strong>{" "}
+              {movie.publisher ? (
+                <Chip
+                  label={movie.publisher}
+                  color="primary"
+                  variant="outlined"
+                  clickable
+                  component={Link}
+                  to={`/publisher/${movie.publisherID}`}
+                  sx={{ ml: 1 }}
+                />
+              ) : (
+                "-"
+              )}
             </Typography>
             <Typography variant="body1" color="text.secondary">
               <strong>Released:</strong> {movie.publishDate || "-"}
@@ -80,7 +95,15 @@ export default function MoviePage({ movie }) {
             </Typography>
             {movie.genres?.length ? (
               movie.genres.map((g) => (
-                <Chip key={g} label={g} sx={{ mr: 0.7, mb: 0.7 }} />
+                <Chip
+                  key={g}
+                  label={g}
+                  sx={{ mr: 0.7, mb: 0.7 }}
+                  color="info"
+                  clickable
+                  component={Link}
+                  to={`/media?genre=${encodeURIComponent(g)}`}
+                />
               ))
             ) : (
               <Typography variant="body2" color="text.secondary">

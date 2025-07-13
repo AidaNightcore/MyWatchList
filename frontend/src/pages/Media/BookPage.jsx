@@ -10,8 +10,9 @@ import {
   Avatar,
 } from "@mui/material";
 import StarIcon from "@mui/icons-material/Star";
-
+import { useNavigate, Link } from "react-router-dom";
 export default function BookPage({ book }) {
+  const navigate = useNavigate();
   return (
     <Card
       sx={{
@@ -61,7 +62,20 @@ export default function BookPage({ book }) {
           </Box>
           <Box sx={{ mb: 2 }}>
             <Typography variant="body1" color="text.secondary">
-              <strong>Publisher:</strong> {book.publisher || "-"}
+              <strong>Publisher:</strong>{" "}
+              {book.publisher ? (
+                <Chip
+                  label={book.publisher}
+                  color="primary"
+                  variant="outlined"
+                  clickable
+                  component={Link}
+                  to={`/publisher/${book.publisherID}`}
+                  sx={{ ml: 1 }}
+                />
+              ) : (
+                "-"
+              )}
             </Typography>
             <Typography variant="body1" color="text.secondary">
               <strong>Pages:</strong> {book.pages || "-"}
@@ -76,7 +90,15 @@ export default function BookPage({ book }) {
             </Typography>
             {book.genres?.length ? (
               book.genres.map((g) => (
-                <Chip key={g} label={g} sx={{ mr: 0.7, mb: 0.7 }} />
+                <Chip
+                  key={g}
+                  label={g}
+                  sx={{ mr: 0.7, mb: 0.7 }}
+                  color="info"
+                  clickable
+                  component={Link}
+                  to={`/media?genre=${encodeURIComponent(g)}`}
+                />
               ))
             ) : (
               <Typography variant="body2" color="text.secondary">
@@ -92,7 +114,14 @@ export default function BookPage({ book }) {
               <Grid container spacing={1}>
                 {book.crew.map((c, idx) => (
                   <Grid key={idx} item>
-                    <Chip label={`${c.job}: ${c.worker}`} size="small" />
+                    <Chip
+                      label={`${c.job}: ${c.worker}`}
+                      size="small"
+                      clickable
+                      color="secondary"
+                      component={Link}
+                      to={`/person/${encodeURIComponent(c.worker)}`}
+                    />
                   </Grid>
                 ))}
               </Grid>
