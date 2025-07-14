@@ -1,11 +1,15 @@
 import React from "react";
-import { useRouteError, Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { Box, Button, Container, Typography } from "@mui/material";
 import HomeIcon from "@mui/icons-material/Home";
 
-const ErrorPage = () => {
-  const error = useRouteError();
-  console.error(error);
+export default function ErrorPage() {
+  // Dacă ai transmis un mesaj de eroare cu navigate("/error", { state: { status, message } })
+  const location = useLocation();
+  const status = location.state?.status || "Error";
+  const message =
+    location.state?.message ||
+    "Something went wrong or the page was not found.";
 
   return (
     <Container maxWidth="sm">
@@ -24,17 +28,15 @@ const ErrorPage = () => {
           variant="h1"
           sx={{ fontSize: "5rem", fontWeight: 700, mb: 2 }}
         >
-          {error.status || "Error"}
+          {status}
         </Typography>
 
         <Typography variant="h4" sx={{ mb: 2 }}>
-          {error.status === 404
-            ? "Oops! Page not found."
-            : "Something went wrong!"}
+          {status === 404 ? "Oops! Page not found." : "Something went wrong!"}
         </Typography>
 
         <Typography variant="body1" sx={{ mb: 3 }}>
-          {error.statusText || error.message}
+          {message}
         </Typography>
 
         <Button
@@ -49,6 +51,4 @@ const ErrorPage = () => {
       </Box>
     </Container>
   );
-};
-
-export default ErrorPage;
+}

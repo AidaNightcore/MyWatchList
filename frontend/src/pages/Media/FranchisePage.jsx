@@ -9,8 +9,8 @@ import {
   Divider,
   Box,
 } from "@mui/material";
-import MediaCard from "../../components/media/MediaCard";
 import api from "../../services/api";
+import MediaCard from "../../components/media/MediaCard";
 
 export default function FranchisePage() {
   const { id } = useParams();

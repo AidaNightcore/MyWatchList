@@ -4,7 +4,7 @@ import { useParams } from "react-router-dom";
 import BookPage from "./BookPage";
 import MoviePage from "./MoviePage";
 import ShowPage from "./ShowPage";
-import api from "../../services/api"; // Adjust import
+import api from "../../services/api";
 
 export default function MediaDetailPage() {
   const { titleId } = useParams();
@@ -25,7 +25,6 @@ export default function MediaDetailPage() {
   if (error) return <div style={{ color: "red" }}>Error: {error}</div>;
   if (!data) return <div>Loading...</div>;
 
-  // Decide ce detaliu să afișeze
   if (data.type === "Book" && data.details)
     return <BookPage book={data.details} />;
   if (data.type === "Movie" && data.details)

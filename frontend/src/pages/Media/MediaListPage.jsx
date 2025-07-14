@@ -39,12 +39,15 @@ const MediaListPage = () => {
     // Poți extinde pentru franchise etc.
   }, [location.search]);
 
-  // Actualizează URL-ul când filtrele se schimbă (opțional, dar util!)
   useEffect(() => {
     const params = {};
     if (mediaType) params.type = mediaType;
-    if (genre.length) params.genre = genre;
-    if (publisher.length) params.publisher = publisher;
+    if (genre.length)
+      params.genre = genre.map((g) => (typeof g === "string" ? g : g.name));
+    if (publisher.length)
+      params.publisher = publisher.map((p) =>
+        typeof p === "string" ? p : p.name
+      );
     const queryString = new URLSearchParams(params).toString();
     navigate(`?${queryString}`, { replace: true });
   }, [mediaType, genre, publisher, navigate]);
@@ -61,17 +64,27 @@ const MediaListPage = () => {
   };
 
   const filteredTitles = useMemo(() => {
+    // Normalizează selecțiile la array de stringuri (nume)
+    const selectedGenreNames = genre.map((g) =>
+      typeof g === "string" ? g : g.name
+    );
+    const selectedPublisherNames = publisher.map((p) =>
+      typeof p === "string" ? p : p.name
+    );
+
     return allTitles.filter((item) => {
       if (mediaType && item.type !== mediaType) return false;
+      // GENURI: verifică dacă cel puțin un gen selectat se regăsește la media
       if (
-        genre.length > 0 &&
-        !genre.some((g) => item.genres?.includes(g.name || g))
+        selectedGenreNames.length > 0 &&
+        !selectedGenreNames.some((g) => item.genres?.includes(g))
       )
         return false;
+      // PUBLISHER: verifică dacă cel puțin un publisher selectat e la media
       if (
-        publisher.length > 0 &&
+        selectedPublisherNames.length > 0 &&
         (!item.details ||
-          !publisher.some((p) => item.details.publisher === p.name))
+          !selectedPublisherNames.includes(item.details.publisher))
       )
         return false;
       return true;

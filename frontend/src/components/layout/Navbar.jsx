@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import AppBar from "@mui/material/AppBar";
 import Box from "@mui/material/Box";
 import Toolbar from "@mui/material/Toolbar";
@@ -14,12 +14,11 @@ import Tooltip from "@mui/material/Tooltip";
 import MenuItem from "@mui/material/MenuItem";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
-
 import InputBase from "@mui/material/InputBase";
 import SearchIcon from "@mui/icons-material/Search";
 import { alpha, styled } from "@mui/material/styles";
+import api from "../../services/api";
 
-// Stilizare MUI pentru SearchBar
 const Search = styled("div")(({ theme }) => ({
   position: "relative",
   borderRadius: theme.shape.borderRadius,
@@ -49,7 +48,6 @@ const StyledInputBase = styled(InputBase)(({ theme }) => ({
   color: "inherit",
   "& .MuiInputBase-input": {
     padding: theme.spacing(1, 1, 1, 0),
-    // vertical padding + font size from searchIcon
     paddingLeft: `calc(1em + ${theme.spacing(4)})`,
     transition: theme.transitions.create("width"),
     width: "100%",
@@ -65,17 +63,24 @@ const Navbar = () => {
   const { isAuthenticated, user, logout } = useAuth();
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
+  const [userDetails, setUserDetails] = useState(null);
 
-  // Funcția de submit pentru search
-  const handleSearchSubmit = (e) => {
-    e.preventDefault();
-    if (searchTerm.trim()) {
-      navigate(`/media?search=${encodeURIComponent(searchTerm.trim())}`);
-      setSearchTerm("");
-      handleCloseNavMenu();
+  useEffect(() => {
+    // Fetch user details (admin, moderator, profilePicture) only if logged in
+    if (isAuthenticated && user?.id) {
+      api.get(`/api/users/${user.id}`).then((res) => setUserDetails(res.data));
     }
-  };
-  // Navigare principală
+  }, [isAuthenticated, user]);
+
+  const isAdmin = !!userDetails?.isAdmin;
+  const isModerator = !!userDetails?.isModerator;
+
+  // Profile picture always from /api/users/:id/profile-picture, not from user object
+  const profilePicUrl =
+    userDetails && userDetails.id
+      ? `/api/users/${userDetails.id}/profile-picture?${Date.now()}`
+      : undefined;
+
   const pages = [
     { label: "Recommendations", path: "/recommendations" },
     { label: "Forums", path: "/forum" },
@@ -84,15 +89,20 @@ const Navbar = () => {
     { label: "Media", path: "/media" },
   ];
 
-  // Opțiuni meniu user (strict ce există în AppRouter.jsx)
   const userMenu = [
     {
       label: "Profile",
-      path: user ? `/profile/${user.id}` : "/",
+      path: userDetails ? `/profile/${userDetails.id}` : "/",
     },
     { label: "Watchlist", path: "/watchlist" },
     { label: "Propose", path: "/propose-media" },
     { label: "Settings", path: "/settings" },
+    ...(isAdmin
+      ? [{ label: "Admin Dashboard", path: "/admin/dashboard" }]
+      : []),
+    ...(isModerator
+      ? [{ label: "Moderator Dashboard", path: "/moderator/dashboard" }]
+      : []),
     {
       label: "Logout",
       action: () => {
@@ -101,11 +111,20 @@ const Navbar = () => {
       },
     },
   ];
-  // Meniu pentru utilizatori neautentificați
+
   const guestMenu = [
     { label: "Login", path: "/login" },
     { label: "Create Account", path: "/register" },
   ];
+
+  const handleSearchSubmit = (e) => {
+    e.preventDefault();
+    if (searchTerm.trim()) {
+      navigate(`/media?search=${encodeURIComponent(searchTerm.trim())}`);
+      setSearchTerm("");
+      handleCloseNavMenu();
+    }
+  };
 
   const handleOpenNavMenu = (event) => setAnchorElNav(event.currentTarget);
   const handleOpenUserMenu = (event) => setAnchorElUser(event.currentTarget);
@@ -116,7 +135,6 @@ const Navbar = () => {
     <AppBar position="static">
       <Container maxWidth="xl">
         <Toolbar disableGutters>
-          {/* Logo and Title */}
           <Typography
             variant="h6"
             noWrap
@@ -132,9 +150,8 @@ const Navbar = () => {
               display: { xs: "none", md: "flex" },
             }}
           >
-            MediaTracker
+            MyWatchList
           </Typography>
-
           {/* Nav buttons for mobile */}
           <Box sx={{ flexGrow: 1, display: { xs: "flex", md: "none" } }}>
             <IconButton
@@ -176,7 +193,6 @@ const Navbar = () => {
               ))}
             </Menu>
           </Box>
-
           {/* Logo for mobile */}
           <Typography
             variant="h5"
@@ -194,9 +210,8 @@ const Navbar = () => {
               textDecoration: "none",
             }}
           >
-            MediaTracker
+            MyWatchList
           </Typography>
-
           {/* Nav buttons for desktop */}
           <Box sx={{ flexGrow: 1, display: { xs: "none", md: "flex" } }}>
             {pages.map((page) => (
@@ -209,6 +224,7 @@ const Navbar = () => {
               </Button>
             ))}
           </Box>
+          {/* Search bar */}
           <Box
             sx={{
               flexGrow: 1,
@@ -233,13 +249,13 @@ const Navbar = () => {
           </Box>
           {/* User menu */}
           <Box sx={{ flexGrow: 0 }}>
-            {isAuthenticated ? (
+            {isAuthenticated && userDetails ? (
               <>
                 <Tooltip title="User menu">
                   <IconButton onClick={handleOpenUserMenu} sx={{ p: 0 }}>
                     <Avatar
-                      alt={user?.username || "Profile"}
-                      src={user?.profilePicture || ""}
+                      alt={userDetails.username || "Profile"}
+                      src={profilePicUrl}
                     />
                   </IconButton>
                 </Tooltip>
@@ -277,9 +293,7 @@ const Navbar = () => {
                           navigate(item.path);
                           handleCloseUserMenu();
                         }}
-                        disabled={
-                          !item.path || item.path === "/profile/${user.id}"
-                        }
+                        disabled={!item.path}
                       >
                         <Typography textAlign="center">{item.label}</Typography>
                       </MenuItem>

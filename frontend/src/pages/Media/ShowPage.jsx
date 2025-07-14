@@ -14,6 +14,7 @@ import {
 } from "@mui/material";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import StarIcon from "@mui/icons-material/Star";
+import WatchlistButton from "../../components/ui/WatchlistButton"; // Adjust the path as needed
 
 export default function ShowPage({ show }) {
   return (
@@ -34,8 +35,9 @@ export default function ShowPage({ show }) {
             maxWidth: 260,
             flexShrink: 0,
             display: "flex",
-            alignItems: "flex-start",
-            justifyContent: "center",
+            flexDirection: "column", // Asigură vertical
+            alignItems: "center",
+            justifyContent: "flex-start",
             p: 3,
           }}
         >
@@ -48,8 +50,11 @@ export default function ShowPage({ show }) {
               height: 300,
               boxShadow: 3,
               bgcolor: "#fff",
+              mb: 2,
             }}
           />
+          {/* WatchlistButton sub copertă */}
+          <WatchlistButton titleID={show.id} />
         </Box>
 
         {/* Show Details */}

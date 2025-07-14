@@ -11,6 +11,7 @@ import {
 } from "@mui/material";
 import StarIcon from "@mui/icons-material/Star";
 import { useNavigate, Link } from "react-router-dom";
+import WatchlistButton from "../../components/ui/WatchlistButton"; // Adjust the path as needed
 
 export default function MoviePage({ movie }) {
   const navigate = useNavigate();
@@ -32,8 +33,9 @@ export default function MoviePage({ movie }) {
             maxWidth: 260,
             flexShrink: 0,
             display: "flex",
-            alignItems: "flex-start",
-            justifyContent: "center",
+            flexDirection: "column", // Asigură vertical
+            alignItems: "center",
+            justifyContent: "flex-start",
             p: 3,
           }}
         >
@@ -46,8 +48,11 @@ export default function MoviePage({ movie }) {
               height: 300,
               boxShadow: 3,
               bgcolor: "#fff",
+              mb: 2,
             }}
           />
+          {/* WatchlistButton sub copertă */}
+          <WatchlistButton titleID={movie.id} />
         </Box>
 
         {/* Movie Details */}
@@ -111,6 +116,14 @@ export default function MoviePage({ movie }) {
               </Typography>
             )}
           </Box>
+
+          <Typography variant="h6" sx={{ mb: 1 }}>
+            Synopsis
+          </Typography>
+          <Typography variant="body1" color="text.primary">
+            {movie.synopsis || <i>No synopsis available.</i>}
+          </Typography>
+          <Divider sx={{ my: 2 }} />
           {movie.crew?.length > 0 && (
             <Box sx={{ mb: 2 }}>
               <Typography variant="body2" sx={{ fontWeight: "bold", mb: 0.5 }}>
@@ -125,13 +138,6 @@ export default function MoviePage({ movie }) {
               </Grid>
             </Box>
           )}
-          <Divider sx={{ my: 2 }} />
-          <Typography variant="h6" sx={{ mb: 1 }}>
-            Synopsis
-          </Typography>
-          <Typography variant="body1" color="text.primary">
-            {movie.synopsis || <i>No synopsis available.</i>}
-          </Typography>
         </CardContent>
       </Box>
     </Card>
