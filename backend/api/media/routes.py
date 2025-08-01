@@ -25,39 +25,15 @@ admin_bp = Blueprint('admin', __name__, url_prefix='/api/admin')
 @cache_response(timeout=120)
 def get_books():
     books = Book.query.all()
-    result = []
-    for book in books:
-        score = get_score_recursive('Book', book.id)
-        result.append({
-            'id': book.id,
-            'title': book.title,
-            'imgURL': book.imgURL,  # corect, nu img_url!
-            'genres': [g.name for g in book.genres] if book.genres else [],
-            'publisher': book.publisher.name if book.publisher else None,
-            'publishDate': book.publishDate.isoformat() if book.publishDate else None,
-            'pages': book.pages,
-            'score': score
-        })
+    result = [book.to_dict() for book in books]
     return jsonify(result), HTTPStatus.OK
-
 
 @media_bp.route('/movies', methods=['GET'])
 @jwt_required_middleware()
 @cache_response(timeout=120)
 def get_movies():
     movies = Movie.query.all()
-    result = []
-    for movie in movies:
-        score = get_score_recursive('Movie', movie.id)
-        result.append({
-            'id': movie.id,
-            'title': movie.title,
-            'imgURL': movie.imgURL,
-            'genres': [g.name for g in movie.genres] if movie.genres else [],
-            'publisher': movie.publisher.name if movie.publisher else None,
-            'publishDate': movie.publishDate.isoformat() if movie.publishDate else None,
-            'score': score
-        })
+    result = [movie.to_dict() for movie in movies]
     return jsonify(result), HTTPStatus.OK
 
 @media_bp.route('/shows', methods=['GET'])
@@ -65,18 +41,9 @@ def get_movies():
 @cache_response(timeout=120)
 def get_shows():
     shows = Show.query.all()
-    result = []
-    for show in shows:
-        score = get_score_recursive('Show', show.id)
-        result.append({
-            'id': show.id,
-            'title': show.title,
-            'imgURL': show.imgURL,
-            'seasons_count': len(show.seasons),
-            'genres': [g.name for g in show.genres] if show.genres else [],
-            'score': score
-        })
+    result = [show.to_dict() for show in shows]
     return jsonify(result), HTTPStatus.OK
+
 
 @media_bp.route('/shows/<int:show_id>', methods=['GET'])
 @jwt_required_middleware()
@@ -709,14 +676,21 @@ def get_genre(genre_id):
 @media_bp.route('/franchises', methods=['GET'])
 @jwt_required_middleware()
 def get_franchises():
-    franchises = Franchise.query.all()
+    sort = request.args.get('sort', 'title')
+    direction = request.args.get('direction', 'asc')
+    valid_sort = ['title', 'id']
+    if sort not in valid_sort:
+        sort = 'title'
+    query = Franchise.query
+    if sort == 'title':
+        query = query.order_by(Franchise.title.asc() if direction == 'asc' else Franchise.title.desc())
+    else:
+        query = query.order_by(Franchise.id.asc() if direction == 'asc' else Franchise.id.desc())
+
+    franchises = query.all()
     return jsonify([
-        {
-            'id': f.id,
-            'title': f.title,
-            'publisher': f.publisher,
-            'synopsis': f.synopsis
-        } for f in franchises
+        {'id': f.id, 'title': f.title}
+        for f in franchises
     ]), HTTPStatus.OK
 
 @media_bp.route('/franchises/<int:franchise_id>', methods=['GET'])
@@ -737,22 +711,38 @@ def get_franchise(franchise_id):
 @jwt_required_middleware()
 def get_publishers():
     publishers = Publisher.query.all()
-    return jsonify([
-        {'id': p.id, 'name': p.name}
-        for p in publishers
-    ]), HTTPStatus.OK
+    result = []
+    for p in publishers:
+        # Poți include doar ID-urile, sau detalii, sau doar counts (depinde ce vrei să afișezi)
+        books = [b.id for b in p.books] if hasattr(p, 'books') else []
+        movies = [m.id for m in p.movies] if hasattr(p, 'movies') else []
+        shows = [s.id for s in p.shows] if hasattr(p, 'shows') else []
+        result.append({
+            'id': p.id,
+            'name': p.name,
+            'books': books,
+            'movies': movies,
+            'shows': shows
+        })
+    return jsonify(result), HTTPStatus.OK
+
 
 @media_bp.route('/publishers/<int:publisher_id>', methods=['GET'])
 @jwt_required_middleware()
 def get_publisher(publisher_id):
     publisher = Publisher.query.get_or_404(publisher_id)
-    return jsonify({
-        'id': publisher.id,
-        'name': publisher.name,
-        'books': [b.title for b in publisher.books],
-        'movies': [m.title for m in publisher.movies],
-        'shows': [s.title for s in publisher.shows]
-    }), HTTPStatus.OK
+    try:
+        return jsonify({
+            'id': publisher.id,
+            'name': publisher.name,
+            'books': [b.to_dict() for b in publisher.books],
+            'movies': [m.to_dict() for m in publisher.movies],
+            'shows': [s.to_dict() for s in publisher.shows]
+        }), HTTPStatus.OK
+    except Exception as e:
+        print("Serialization error:", str(e))
+        return jsonify({"error": str(e)}), 500
+
 
 @media_bp.route('/recommendations', methods=['GET'])
 @jwt_required_middleware()
@@ -854,7 +844,7 @@ def dashboard_recommendations(user_id):
     last_items = (WatchlistItem.query
                   .join(Watchlist)
                   .filter(Watchlist.userID == user.id, WatchlistItem.status == 'completed')
-                  .order_by(WatchlistItem.updated_at.desc())
+                  .order_by(WatchlistItem.startDate.desc())
                   .limit(5).all())
     recs = {}
     for item in last_items:

@@ -4,7 +4,6 @@ import { Link } from "react-router-dom";
 import TopicCard from "../forum/TopicCard";
 
 export default function FeatureGrid({ forumBoard }) {
-  // Preluăm câte 1 topic din fiecare categorie dacă există
   const forumTopics = [
     forumBoard.Book?.[0],
     forumBoard.Movie?.[0],
@@ -41,7 +40,6 @@ export default function FeatureGrid({ forumBoard }) {
                   imgURL={topic.imgURL}
                   firstReply={topic.firstReply}
                   mediaId={topic.mediaId}
-                  // Poți adăuga props suplimentare pentru detalii topic
                 />
               ) : null
             )}

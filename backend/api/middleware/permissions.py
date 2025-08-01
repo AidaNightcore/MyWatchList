@@ -23,7 +23,7 @@ def moderator_required(fn):
         user_id = get_jwt_identity()
         user = db.session.get(User, user_id)
 
-        if not user or not user.isModerator:
+        if not user or not (user.isModerator or user.isAdmin):
             return jsonify({"error": "Moderator access required"}), HTTPStatus.FORBIDDEN
 
         return fn(*args, **kwargs)

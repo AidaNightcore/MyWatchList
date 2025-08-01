@@ -11,7 +11,7 @@ import {
 } from "@mui/material";
 import StarIcon from "@mui/icons-material/Star";
 import { useNavigate, Link } from "react-router-dom";
-import WatchlistButton from "../../components/ui/WatchlistButton"; // asigură-te că ai acest path
+import WatchlistButton from "../../components/ui/WatchlistButton"; 
 
 export default function BookPage({ book }) {
   const navigate = useNavigate();
@@ -50,11 +50,9 @@ export default function BookPage({ book }) {
               mb: 2,
             }}
           />
-          {/* WatchlistButton sub copertă */}
           <WatchlistButton titleID={book.id} />
         </Box>
 
-        {/* Informații detaliu */}
         <CardContent sx={{ flex: 1, p: 3, pt: { xs: 0, md: 3 } }}>
           <Typography variant="h4" sx={{ fontWeight: "bold", mb: 1 }}>
             {book.title}

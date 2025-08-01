@@ -196,7 +196,7 @@ def create_episode_with_metadata(data):
         if not existing_crew:
             db.session.add(Crew(titleID=title_entry.id, jobID=job.id))
 
-    # 9. Topic (opțional)
+    # 9. Topic
     topic = Topic(titleID=title_entry.id)
     db.session.add(topic)
 

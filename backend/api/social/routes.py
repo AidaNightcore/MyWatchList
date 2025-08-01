@@ -1,10 +1,13 @@
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from http import HTTPStatus
+
+from sqlalchemy.orm import joinedload
+
 from .models import Topic, Reply, Report
 from api.middleware import jwt_required_middleware
 from ..common.database import db
-from ..media.models import Title
+from ..media.models import Title, Book, Movie, Show, Type
 from ..middleware.permissions import admin_required, moderator_required
 from ..user.models import User
 
@@ -64,13 +67,18 @@ def create_reply(topic_id):
 
 @social_bp.route('/replies/<int:reply_id>', methods=['DELETE'])
 @jwt_required_middleware()
-@admin_required
-@moderator_required
 def delete_reply(reply_id):
+    user_id = get_jwt_identity()
     reply = Reply.query.get_or_404(reply_id)
+    user = User.query.get(user_id)
+
+    if not user or (not user.isAdmin and not user.isModerator and user.id != reply.userID):
+        return jsonify({"error": "Permission denied"}), HTTPStatus.FORBIDDEN
+
     db.session.delete(reply)
     db.session.commit()
     return jsonify({"message": "Reply deleted"}), HTTPStatus.NO_CONTENT
+
 
 @social_bp.route('/replies/<int:reply_id>', methods=['PUT'])
 @jwt_required_middleware()
@@ -166,3 +174,115 @@ def forum_topic_search():
         }
         for t in topics
     ])
+@social_bp.route('/topics/board', methods=['GET'])
+def get_topics_board():
+    # Citește toate tipurile ca să ai maparea typeID → denumire
+    type_id_to_name = {t.typeID: t.elementTypeName for t in Type.query.all()}
+    result = {t: [] for t in ["Book", "Movie", "Show"]}
+
+    # Extrage toate topicurile cu titlu asociat
+    topics = (
+        db.session.query(Topic)
+        .options(joinedload(Topic.title))
+        .order_by(Topic.id.desc())
+        .all()
+    )
+
+    # Grupare pe tip după Titles.elementType
+    grouped = {t: [] for t in ["Book", "Movie", "Show"]}
+    for topic in topics:
+        title = topic.title
+        if not title:
+            continue
+        tip = type_id_to_name.get(title.elementType)
+        if tip in grouped:
+            grouped[tip].append(topic)
+
+    for tip in ["Book", "Movie", "Show"]:
+        for topic in grouped[tip][:5]:
+            title = topic.title
+
+            entry = None
+            if tip == "Book":
+                entry = Book.query.filter_by(title=title.title, typeID=title.elementType).first()
+            elif tip == "Movie":
+                entry = Movie.query.filter_by(title=title.title, typeID=title.elementType).first()
+            elif tip == "Show":
+                # Show nu are typeID în model, deci asociezi doar după title
+                entry = Show.query.filter_by(title=title.title).first()
+            if not entry:
+                continue
+
+            # Primul reply (cel mai vechi)
+            first_reply = (
+                Reply.query.filter_by(topicID=topic.id)
+                .order_by(Reply.id.asc())
+                .first()
+            )
+            result[tip].append({
+                "id": topic.id,
+                "mediaId": title.id,  # <-- Adaugă această linie!
+                "title": title.title,
+                "imgURL": getattr(entry, "imgURL", None),
+                "question": getattr(entry, "synopsis", None),
+                "firstReply": first_reply.message if first_reply else None,
+            })
+
+    return jsonify(result), 200
+
+@social_bp.route('/topics/<int:topic_id>/replies', methods=['GET'])
+def get_topic_with_replies(topic_id):
+    topic = Topic.query.get_or_404(topic_id)
+    title = topic.title
+    imgURL = None
+
+    # Agregare imagine media
+    if title:
+        type_obj = Type.query.get(title.elementType)
+        type_name = type_obj.elementTypeName if type_obj else None
+        if type_name == "Book":
+            book = Book.query.filter_by(title=title.title, typeID=title.elementType).first()
+            if book and book.imgURL:
+                imgURL = book.imgURL
+        elif type_name == "Movie":
+            movie = Movie.query.filter_by(title=title.title, typeID=title.elementType).first()
+            if movie and movie.imgURL:
+                imgURL = movie.imgURL
+        elif type_name == "Show":
+            show = Show.query.filter_by(title=title.title).first()
+            if show and show.imgURL:
+                imgURL = show.imgURL
+
+    replies = (
+        Reply.query.filter_by(topicID=topic_id)
+        .order_by(Reply.id.asc())
+        .all()
+    )
+
+    def reply_dict(reply):
+        user = User.query.get(reply.userID) if hasattr(reply, 'userID') else None
+        return {
+            "id": reply.id,
+            "userID": reply.userID,
+            "user": {
+                "id": user.id if user else None,
+                "username": user.username if user else "Anonymous",
+                "profilePicture": f"/api/users/{user.id}/profile-picture" if user and user.profilePicture else None,
+                "createdAt": user.createdAt.isoformat() if user and user.createdAt else None,
+                "lastLogin": user.lastLogin.isoformat() if user and user.lastLogin else None,
+            },
+            "message": reply.message,
+            "createdAt": reply.date.isoformat() if reply.date else None,
+        }
+
+    return jsonify({
+        "topic": {
+            "id": topic.id,
+            "title": title.title if title else "",
+            "imgURL": imgURL,
+            "mediaId": title.id if title else None,
+            "firstReply": replies[0].message if replies else None
+        },
+        "replies": [reply_dict(r) for r in replies]
+    }), 200
+

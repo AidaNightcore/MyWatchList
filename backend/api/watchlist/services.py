@@ -1,4 +1,6 @@
-from api.media.models import Show, Book
+from math import isinf
+
+from api.media.models import Book, Show
 
 
 def enforce_progress(item, requested_progress):
@@ -19,22 +21,28 @@ def enforce_progress(item, requested_progress):
         total_episodes = sum([season.episodeCount or 0 for season in show.seasons])
         if total_episodes == 0:
             return (0, "Show has no episodes.")
-        progress = min(int(requested_progress), total_episodes)
+        if isinf(requested_progress):
+            progress = total_episodes
+        else:
+            progress = min(int(requested_progress), total_episodes)
         return (progress, f"Max progress for show is {total_episodes} episodes.")
 
     elif type_name == "Book":
-        # Book → pages
+
         book = Book.query.filter_by(title=title.title).first()
         total_pages = book.pages if book and book.pages else 1
-        progress = min(int(requested_progress), total_pages)
+        if isinf(requested_progress):
+            progress = total_pages
+        else:
+            progress = min(int(requested_progress), total_pages)
         return (progress, f"Max progress for book is {total_pages} pages.")
 
     elif type_name == "Movie":
-        # Movie: 1 means completed
         if item.status == "completed":
             return (1, "Progress for movie is 1 (completed).")
         return (0, "Progress for movie is 0 (not completed).")
 
     # fallback
+    if isinf(requested_progress):
+        return (1, "Default max progress 1.")
     return (min(int(requested_progress), 1), "Default max progress 1.")
-

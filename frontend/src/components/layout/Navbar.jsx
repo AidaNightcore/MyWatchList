@@ -66,7 +66,6 @@ const Navbar = () => {
   const [userDetails, setUserDetails] = useState(null);
 
   useEffect(() => {
-    // Fetch user details (admin, moderator, profilePicture) only if logged in
     if (isAuthenticated && user?.id) {
       api.get(`/api/users/${user.id}`).then((res) => setUserDetails(res.data));
     }
@@ -75,7 +74,6 @@ const Navbar = () => {
   const isAdmin = !!userDetails?.isAdmin;
   const isModerator = !!userDetails?.isModerator;
 
-  // Profile picture always from /api/users/:id/profile-picture, not from user object
   const profilePicUrl =
     userDetails && userDetails.id
       ? `/api/users/${userDetails.id}/profile-picture?${Date.now()}`
@@ -98,9 +96,11 @@ const Navbar = () => {
     { label: "Propose", path: "/propose-media" },
     { label: "Settings", path: "/settings" },
     ...(isAdmin
-      ? [{ label: "Admin Dashboard", path: "/admin/dashboard" }]
-      : []),
-    ...(isModerator
+      ? [
+          { label: "Admin Dashboard", path: "/admin/dashboard" },
+          { label: "Moderator Dashboard", path: "/moderator/dashboard" }, // Adaugă și pentru admin
+        ]
+      : isModerator
       ? [{ label: "Moderator Dashboard", path: "/moderator/dashboard" }]
       : []),
     {

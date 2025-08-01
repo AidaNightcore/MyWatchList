@@ -4,14 +4,10 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import re
 from api import db
 
-# Import your existing User model
 from api.user.models import User
 
-
-# Extend the existing User model with authentication features
 def enhance_user_model():
 
-    # Add validators if they don't exist
     if not hasattr(User, 'validate_email'):
         @validates('email')
         def validate_email(self, key, email):
@@ -32,7 +28,6 @@ def enhance_user_model():
 
         User.validate_username = validate_username
 
-    # Add password methods
     if not hasattr(User, 'set_password'):
         def set_password(self, password):
             if len(password) < 8:
@@ -58,12 +53,8 @@ def enhance_user_model():
 
         User.to_dict = to_dict
 
-
-# Call this function to enhance the User model
 enhance_user_model()
 
-
-# Define the RefreshToken model
 class RefreshToken(db.Model):
     __tablename__ = 'RefreshToken'
 

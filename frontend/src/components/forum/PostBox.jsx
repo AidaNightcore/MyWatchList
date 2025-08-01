@@ -21,6 +21,7 @@ export default function PostBox({
 
   return (
     <Box
+      id={`reply-${post.id}`} // Acum fiecare reply are id unic pentru scroll
       sx={{
         bgcolor: "#242424",
         borderRadius: 1,
@@ -53,18 +54,16 @@ export default function PostBox({
           {post.user?.username || "Anonymous"}
         </Typography>
         <Typography variant="body2" align="center" color="gray">
-          <Typography variant="body2" align="center" color="gray">
-            {post.user?.lastLogin
-              ? `Last online: ${formatDate(post.user.lastLogin)}`
-              : "Last online: —"}
-          </Typography>
+          {post.user?.lastLogin
+            ? `Last online: ${formatDate(post.user.lastLogin)}`
+            : "Last online: —"}
         </Typography>
         <Typography variant="body2" align="center" color="gray" sx={{ mt: 1 }}>
           Joined: {post.user?.joinedDate || "—"}
         </Typography>
-        <Typography variant="body2" align="center" color="gray">
+        {/* <Typography variant="body2" align="center" color="gray">
           Posts: {post.user?.posts || "—"}
-        </Typography>
+        </Typography> */}
       </Box>
       {/* Message (right column) */}
       <Box sx={{ flex: 1, p: 2 }}>

@@ -5,7 +5,8 @@ import requests
 CSV_BOOKS = "D:/ASE/Licenta/Data/books.csv"
 CSV_DATA = "D:/ASE/Licenta/Data/data.csv"
 ADMIN_BOOK_URL = "http://localhost:5000/api/admin/book"
-JWT_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc1MjQxMTAwOCwianRpIjoiMjgyYjIwNDQtNWVkNS00OTdmLWE3M2MtZDAyNzkzNGExNjkzIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NTI0MTEwMDgsImNzcmYiOiJjNmU0OTViYy1lZjdlLTQyYjAtOTg4Zi0wYmQ1ZmU4YzJlZTMiLCJleHAiOjE3NTI0MTQ2MDh9.N1fbLiyZAg1v_bHIx4ojrH9Ht5Z83AqLsNb2xi4hl_A"
+JWT_TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc1MjQ4OTI0NCwianRpIjoiNTg2ZGY4MmEtMjJlMi00OWMzLWFkMDMtY2U0MTY4NGZlYmMzIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NTI0ODkyNDQsImNzcmYiOiI2MDM1ZjIzNi0wYjQyLTRjMjAtOGYzNC1iYjVlZGJkYjFiOWQiLCJleHAiOjE3NTI0OTI4NDR9.ola0dhKFjRK-ozdqMzuVNS00Ac7BRRHPz7va-8yM720"
+
 df_books = pd.read_csv(CSV_BOOKS, on_bad_lines='skip')
 df_data = pd.read_csv(CSV_DATA, on_bad_lines='skip')
 

@@ -287,6 +287,7 @@ def update_user_username(user_id):
     db.session.commit()
     return jsonify({"message": "Username updated"}), HTTPStatus.OK
 
+
 @user_bp.route('/profile-summary/<int:user_id>', methods=['GET'])
 def profile_summary(user_id):
     user = User.query.get_or_404(user_id)
@@ -298,6 +299,7 @@ def profile_summary(user_id):
             "counts": {},
             "genre_distribution": {},
             "status_by_genre": {},
+            "status_by_type": {},
             "pages_read": 0,
             "minutes_watched": 0
         }), 200
@@ -305,6 +307,7 @@ def profile_summary(user_id):
     counts = {}
     genre_distribution = {}
     status_by_genre = {}
+    status_by_type = {}
     pages_read = 0
     minutes_watched = 0
 
@@ -312,7 +315,6 @@ def profile_summary(user_id):
         st = item.status
         counts[st] = counts.get(st, 0) + 1
 
-        # Extrage titlul asociat și detaliile lui
         title = item.title
         details = getattr(item, "element_details", None) or {}
 
@@ -320,20 +322,20 @@ def profile_summary(user_id):
         pages = 0
         duration = 0
 
-        # Genuri
         if title and title.genres:
             genres = [g.name for g in title.genres]
-        # Pagini (doar pentru cărți)
+
         if details and hasattr(details, 'pages') and details.pages:
             pages = details.pages
-        # Filme
-        if details and hasattr(details, 'duration') and details.duration and title.media_type.elementTypeName == "Movie":
+
+        if details and hasattr(details,
+                               'duration') and details.duration and title.media_type.elementTypeName == "Movie":
             if st == "completed":
                 minutes_watched += details.duration
-        # Cărți
+
         if st == "completed" and title.media_type.elementTypeName == "Book":
             pages_read += pages
-        # Episoade/Show
+
         if title and title.media_type.elementTypeName == "Show":
             progress = item.progress or 0
             all_episodes = []
@@ -357,16 +359,24 @@ def profile_summary(user_id):
                 status_by_genre[g] = {}
             status_by_genre[g][st] = status_by_genre[g].get(st, 0) + 1
 
-    # FINAL: Adaugă return aici!
+        # Agregare pe tip
+        if title and title.media_type:
+            type_name = title.media_type.elementTypeName
+            if type_name not in status_by_type:
+                status_by_type[type_name] = {}
+            status_by_type[type_name][st] = status_by_type[type_name].get(st, 0) + 1
+
     return jsonify({
         "username": user.username,
         "id": user.id,
         "counts": counts,
         "genre_distribution": genre_distribution,
         "status_by_genre": status_by_genre,
+        "status_by_type": status_by_type,
         "pages_read": pages_read,
         "minutes_watched": minutes_watched
     }), 200
+
 
 @user_bp.route('/activity-history/<int:user_id>', methods=['GET'])
 @jwt_required_middleware()
@@ -391,7 +401,6 @@ def activity_history(user_id):
         image_url = None
         publish_date = None
 
-        # Extrage imgURL/publishDate în funcție de tip (recomandare: folosește first by title/titleID)
         if type_name == "Book":
             book = Book.query.filter_by(title=title.title, typeID=title.elementType).first()
             if book:

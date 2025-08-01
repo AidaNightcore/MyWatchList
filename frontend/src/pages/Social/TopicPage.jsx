@@ -9,7 +9,7 @@ import {
 import PostBox from "../../components/forum/PostBox";
 import TopicCard from "../../components/forum/TopicCard";
 import api from "../../services/api";
-import { useParams } from "react-router-dom";
+import { useParams, useLocation } from "react-router-dom";
 import ReplyBox from "../../components/forum/ReplyBox";
 import EditReplyDialog from "../../components/forum/EditReplyDialog";
 import ConfirmDialogDelete from "../../components/forum/ConfirmDialogDelete";
@@ -35,6 +35,7 @@ export default function TopicPage() {
       setDeleteLoading(false);
     }
   };
+
   const { topicId } = useParams();
   const [topic, setTopic] = useState(null);
   const [replies, setReplies] = useState([]);
@@ -43,6 +44,10 @@ export default function TopicPage() {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editingReply, setEditingReply] = useState(null);
 
+  // Scroll la reply pe baza hash-ului din url
+  const location = useLocation();
+  const [scrolledToReply, setScrolledToReply] = useState(false);
+
   const reloadReplies = () => {
     api.get(`/api/social/topics/${topicId}/replies`).then((res) => {
       setTopic(res.data.topic);
@@ -50,6 +55,26 @@ export default function TopicPage() {
       setLoading(false);
     });
   };
+
+  useEffect(() => {
+    reloadReplies();
+  }, [topicId]);
+
+  useEffect(() => {
+    setScrolledToReply(false); // resetăm la fiecare topic nou
+  }, [topicId]);
+
+  useEffect(() => {
+    if (!loading && !scrolledToReply && location.hash && replies.length > 0) {
+      const elem = document.getElementById(location.hash.substring(1));
+      if (elem) {
+        elem.scrollIntoView({ behavior: "smooth", block: "center" });
+        elem.style.background = "#fffde7";
+        setTimeout(() => (elem.style.background = ""), 1800);
+        setScrolledToReply(true);
+      }
+    }
+  }, [loading, replies, location.hash, scrolledToReply]);
 
   // Modifică handlerul de edit:
   const handleEditReply = (post) => {
@@ -65,10 +90,6 @@ export default function TopicPage() {
     });
     alert("Reply reported.");
   };
-
-  useEffect(() => {
-    reloadReplies();
-  }, [topicId]);
 
   if (loading)
     return (

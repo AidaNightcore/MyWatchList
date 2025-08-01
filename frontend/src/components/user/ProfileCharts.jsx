@@ -32,49 +32,35 @@ function buildPieData(obj) {
 export default function ProfileCharts({ summary }) {
   if (!summary) return null;
 
-  // 1. Pie: Distribuție genuri (toate titlurile)
   const genreData = buildPieData(summary.genre_distribution);
-
-  // 2. Pie: Distribuție statusuri (toate statusurile: planned, completed, watching, dropped, on_hold)
   const statusData = buildPieData(summary.counts);
 
-  // 3. Bar: Comparativ statusuri pe tip (Book, Movie, Show) - calculat din status_by_genre
-  // Dacă nu ai deja o mapare gen -> tip, adaptează codul de mai jos:
-  // Exemplu mapare de bază (modifică după structura reală a genurilor la tine):
-  const genreTypeMap = {
-    // Exemplu. Completează după caz!
-    Fantasy: "Book",
-    "Science Fiction": "Book",
-    Adventure: "Book",
-    Mystery: "Book",
-    Romance: "Book",
-    Biography: "Book",
-    History: "Book",
-    Action: "Movie",
-    Animation: "Movie",
-    Drama: "Show",
-    Comedy: "Show",
-    Crime: "Show",
-    Thriller: "Movie",
-    Documentary: "Movie",
-    Horror: "Movie",
-    Sitcom: "Show",
-    // ... restul genurilor tale ...
-  };
-
+  // Statusuri și genuri le ai deja, dar trebuie să extragi statusuri pe tip real din status_by_genre și genuri
+  // Agregare tipuri pe baza status_by_genre + (dacă ai array de itemi, preferabil parcurgi acei itemi)
   const statusByGenre = summary.status_by_genre || {};
-  const typeList = ["Book", "Movie", "Show"];
-  const statusList = Object.keys(summary.counts || {});
 
-  // Construiește status_by_type din status_by_genre:
-  const statusByType = {};
-  Object.entries(statusByGenre).forEach(([genre, statusCounts]) => {
-    const type = genreTypeMap[genre] || "Other";
-    Object.entries(statusCounts).forEach(([status, count]) => {
-      if (!statusByType[type]) statusByType[type] = {};
-      statusByType[type][status] = (statusByType[type][status] || 0) + count;
+  // Determină dinamic lista de tipuri și statusuri din datele existente
+  const tipuriSet = new Set();
+  const statusuriSet = new Set();
+
+  // Acest mapping e util doar dacă backend-ul NU returnează lista de itemi cu tipul fiecăruia.
+  Object.entries(statusByGenre).forEach(([gen, statObj]) => {
+    Object.entries(statObj).forEach(([status, count]) => {
+      statusuriSet.add(status);
+      // Tipul pentru gen nu se poate determina fără extra date, deci aici NU mai faci mapare gen->tip.
+      // Tipurile le determinăm separat, dintr-o listă de itemi dacă backend-ul le expune.
     });
   });
+
+  // Dacă ai nevoie de tipuri per item, ideal e ca backendul să îți returneze și lista de itemi din watchlist
+  // Ex: summary.items = [{title:..., status:..., type:...}, ...]
+  // Dacă nu, atunci nu poți construi bar chartul "pe tip" corect fără a cere această modificare la backend!
+
+  // Exemplu fallback: folosește status_by_genre și grupează doar pe genuri
+  // Dacă ai totuși tipul în status_by_genre (de ex. summary.status_by_type), folosește direct!
+  const statusByType = summary.status_by_type || {}; // ideal, vezi dacă backend-ul trimite deja acest câmp
+  const typeList = Object.keys(statusByType);
+  const statusList = Object.keys(summary.counts || {});
 
   const barData = statusList.map((status) => ({
     status,
@@ -102,10 +88,9 @@ export default function ProfileCharts({ summary }) {
             justifyContent: "space-around",
           }}
         >
-          {/* Pie 1: Genuri */}
           <Box>
             <Typography align="center" variant="subtitle1" sx={{ mb: 1 }}>
-              Distribuție Genuri
+              Genre Distribution
             </Typography>
             <ResponsiveContainer width={240} height={240}>
               <PieChart>
@@ -129,10 +114,9 @@ export default function ProfileCharts({ summary }) {
               </PieChart>
             </ResponsiveContainer>
           </Box>
-          {/* Pie 2: Statusuri */}
           <Box>
             <Typography align="center" variant="subtitle1" sx={{ mb: 1 }}>
-              Distribuție Statusuri
+              Status Distribution
             </Typography>
             <ResponsiveContainer width={240} height={240}>
               <PieChart>
@@ -158,27 +142,29 @@ export default function ProfileCharts({ summary }) {
           </Box>
         </Box>
         {/* Bar chart comparativ statusuri pe tip */}
-        <Box sx={{ width: "100%", mt: 5 }}>
-          <Typography variant="subtitle1" align="center" sx={{ mb: 1 }}>
-            Comparativ statusuri pe tip (Book, Movie, Show)
-          </Typography>
-          <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={barData}>
-              <XAxis dataKey="status" />
-              <YAxis allowDecimals={false} />
-              <Tooltip />
-              <Legend />
-              {typeList.map((type, idx) => (
-                <Bar
-                  key={type}
-                  dataKey={type}
-                  fill={COLORS[idx % COLORS.length]}
-                  name={type}
-                />
-              ))}
-            </BarChart>
-          </ResponsiveContainer>
-        </Box>
+        {typeList.length > 0 && (
+          <Box sx={{ width: "100%", mt: 5 }}>
+            <Typography variant="subtitle1" align="center" sx={{ mb: 1 }}>
+              Comparativ statusuri pe tip (Book, Movie, Show, etc.)
+            </Typography>
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={barData}>
+                <XAxis dataKey="status" />
+                <YAxis allowDecimals={false} />
+                <Tooltip />
+                <Legend />
+                {typeList.map((type, idx) => (
+                  <Bar
+                    key={type}
+                    dataKey={type}
+                    fill={COLORS[idx % COLORS.length]}
+                    name={type}
+                  />
+                ))}
+              </BarChart>
+            </ResponsiveContainer>
+          </Box>
+        )}
       </CardContent>
     </Card>
   );

@@ -10,7 +10,6 @@ export default function FranchisesPage() {
     api.get("/api/media/franchises").then((res) => setFranchises(res.data));
   }, []);
 
-  // Group by type
   const bookFr = franchises.filter((f) => f.books && f.books.length > 0);
   const movieFr = franchises.filter((f) => f.movies && f.movies.length > 0);
   const showFr = franchises.filter((f) => f.shows && f.shows.length > 0);

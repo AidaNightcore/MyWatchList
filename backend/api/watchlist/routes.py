@@ -398,3 +398,30 @@ def recommendation_history(user_id):
         except Exception:
             continue
     return jsonify(history)
+
+@watchlist_bp.route('/items/by-title/<int:title_id>', methods=['GET'])
+@jwt_required_middleware()
+def get_watchlist_item_by_title(title_id):
+    user_id = int(get_jwt_identity())
+    watchlist = Watchlist.query.filter_by(userID=user_id).first()
+    if not watchlist:
+        return jsonify({}), 404
+
+    item = next((item for item in watchlist.items if item.titleID == title_id), None)
+    if not item:
+        return jsonify({}), 404
+
+    return jsonify(item.to_dict()), 200
+
+@watchlist_bp.route('/items/<int:item_id>', methods=['DELETE'])
+@jwt_required_middleware()
+def delete_watchlist_item(item_id):
+    user_id = int(get_jwt_identity())
+    item = WatchlistItem.query.join(Watchlist).filter(
+        WatchlistItem.id == item_id,
+        Watchlist.userID == user_id
+    ).first_or_404()
+
+    db.session.delete(item)
+    db.session.commit()
+    return jsonify({"message": "Item deleted"}), HTTPStatus.NO_CONTENT

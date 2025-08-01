@@ -35,12 +35,10 @@ const MediaCard = ({ media, watchlistItems }) => {
     buttonLabel = statusLabel[watchlistStatus];
   }
 
-  // Afișează anul dacă există publishDate
   const year = media.publishDate
     ? new Date(media.publishDate).getFullYear()
     : "";
-
-  // Culoarea butonului (opțional, poți adapta după status)
+    
   let buttonColor = "primary";
   if (watchlistStatus === "completed") buttonColor = "success";
   else if (watchlistStatus === "watching") buttonColor = "info";

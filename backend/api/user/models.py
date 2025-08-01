@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy.orm import relationship
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -18,7 +18,7 @@ class User(db.Model):
     isModerator = db.Column(db.Boolean, default=False)
 
     lastLogin = db.Column(db.DateTime)
-    createdAt = db.Column(db.DateTime, default=datetime.utcnow)
+    createdAt = db.Column(db.DateTime, default=datetime.now(timezone.utc))
 
     # Relationships
     watchlists = relationship('Watchlist', back_populates='user')
@@ -45,6 +45,24 @@ class User(db.Model):
     def check_password(self, password):
         return check_password_hash(self.password, password)
 
+    def to_dict(self, include_sensitive=False):
+        data = {
+            "id": self.id,
+            "name": self.name,
+            "email": self.email,
+            "username": self.username,
+            "birthday": self.birthday.isoformat() if self.birthday else None,
+            "profilePicture": bool(self.profilePicture),  # True dacă există
+            "isAdmin": self.isAdmin,
+            "isModerator": self.isModerator,
+            "lastLogin": self.lastLogin.isoformat() if self.lastLogin else None,
+            "createdAt": self.createdAt.isoformat() if self.createdAt else None,
+        }
+        # **NU include parola niciodată**
+        if include_sensitive:
+            data["password"] = self.password
+        return data
+
 
 class UserRelationship(db.Model):
     __tablename__ = 'UserRelationship'
@@ -65,5 +83,13 @@ class UserRelationship(db.Model):
         foreign_keys=[RelatedUserID],
         back_populates='relationships_received'
     )
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "relating_user_id": self.RelatingUserID,
+            "related_user_id": self.RelatedUserID,
+            "type": self.Type,
+        }
 
 

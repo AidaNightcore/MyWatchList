@@ -1,5 +1,5 @@
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from api.common.database import db
 from .models import User, RefreshToken
 import re
@@ -51,6 +51,7 @@ class AuthService:
         new_user.set_password(data['password'])
         db.session.add(new_user)
         db.session.flush()
+        new_user.createdAt=datetime.now(timezone.utc)
         watchlist = Watchlist(userID=new_user.id)
         db.session.commit()
         send_account_creation_email(new_user)
@@ -78,7 +79,7 @@ class AuthService:
             return None
 
         if user and user.check_password(data['password']):
-            user.last_login = datetime.utcnow()
+            user.lastLogin = datetime.now(timezone.utc)
             db.session.commit()
             return user
         return None
@@ -88,7 +89,7 @@ class AuthService:
         RefreshToken.query.filter_by(userID=user.id).update({"revoked": True})
 
         token = secrets.token_urlsafe(128)
-        expiresAt = datetime.utcnow() + timedelta(days=30)
+        expiresAt = datetime.now(timezone.utc) + timedelta(days=30)
 
         refresh_token = RefreshToken(
             userID=user.id,

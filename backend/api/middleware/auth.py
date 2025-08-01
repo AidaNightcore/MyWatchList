@@ -23,7 +23,7 @@ PUBLIC_ENDPOINTS = {
     'media.lookup_franchise',
     'media.lookup_publisher',
     'media.get_movie',
-    'media.get_publishers',
+    'media.get_publisher',
     'media.get_publishers',
     'media.get_franchises',
     'media.get_franchise',

@@ -3,7 +3,7 @@ import requests
 
 CSV_FILE = "D:/ASE/Licenta/Data/TMDB_all_movies(2).csv"
 ADMIN_POST_URL = "http://localhost:5000/api/admin/movie"
-TOKEN = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc1MjQxMjU0NiwianRpIjoiNWJjMTViMDItZjVhMS00YzA2LTgzMzctMzYwYmZiZmViNjcwIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NTI0MTI1NDYsImNzcmYiOiIwNzNjYTVkYS04OTNlLTRhNzctYjAwMC1jNGU5MjhiZmNmZDgiLCJleHAiOjE3NTI0MTYxNDZ9.UAhdmeC_SlhMVGPJvDmqngNX3RRRX_baxQYATcUfREE"  # your JWT here
+TOKEN = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc1MjQ4OTI0NCwianRpIjoiNTg2ZGY4MmEtMjJlMi00OWMzLWFkMDMtY2U0MTY4NGZlYmMzIiwidHlwZSI6ImFjY2VzcyIsInN1YiI6IjEiLCJuYmYiOjE3NTI0ODkyNDQsImNzcmYiOiI2MDM1ZjIzNi0wYjQyLTRjMjAtOGYzNC1iYjVlZGJkYjFiOWQiLCJleHAiOjE3NTI0OTI4NDR9.ola0dhKFjRK-ozdqMzuVNS00Ac7BRRHPz7va-8yM720"
 TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/original/"
 
 def normalize_date(date_val):
